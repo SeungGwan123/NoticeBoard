@@ -18,64 +18,61 @@ export class AuthService {
   async signUp(signupDto: SignupDto): Promise<{ message: string }> {
     const { email, password, name, nickname } = signupDto;
 
-    const isExist = await this.userRepository.findOne({ where: { email } });
-    if (isExist) {
-      if (!isExist.isDeleted) {
-        throw new BadRequestException('이미 사용 중인 이메일입니다.');
+    try {
+      const isExist = await this.userRepository.findOne({ where: { email } });
+      if (isExist) {
+        if (!isExist.isDeleted) {
+          throw new BadRequestException('이미 사용 중인 이메일입니다.');
+        }
+        isExist.isDeleted = false;
+        await this.userRepository.save(isExist);
+        return { message: '회원가입이 성공적으로 진행되었습니다' };
       }
-      isExist.isDeleted = false;
-      await this.userRepository.save(isExist);
-      return {
-        message: '회원가입이 성공적으로 진행되었습니다',
-      };
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = this.userRepository.create({ email, password: hashedPassword, name, nickname });
+      await this.userRepository.save(user);
+
+      return { message: '회원가입이 성공적으로 진행되었습니다' };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new InternalServerErrorException('회원가입 중 오류가 발생했습니다.');
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = this.userRepository.create({
-      email,
-      password: hashedPassword,
-      name,
-      nickname,
-    });
-
-    await this.userRepository.save(user);
-
-    return {
-      message: '회원가입이 성공적으로 진행되었습니다',
-    };
   }
 
   async login(loginDto: LoginDto): Promise<{ accessToken: string; refreshToken: string }> {
     const { email, password } = loginDto;
 
-    const user = await this.userRepository.findOne({ where: { email } });
+    try {
+      const user = await this.userRepository.findOne({ where: { email } });
+      if (!user || user.isDeleted) {
+        throw new UnauthorizedException('이메일이 일치하지 않습니다.');
+      }
 
-    if (!user || user.isDeleted) {
-      throw new UnauthorizedException('이메일이 일치하지 않습니다.');
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('비밀번호가 일치하지 않습니다.');
+      }
+
+      const payload = { id: user.id, email: user.email };
+      const accessToken = this.jwtService.sign(payload, {
+        secret: process.env.ACCESS_TOKEN_SECRET,
+        expiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN,
+      });
+
+      const refreshToken = this.jwtService.sign(payload, {
+        secret: process.env.REFRESH_TOKEN_SECRET,
+        expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN,
+      });
+
+      user.refreshToken = refreshToken;
+      await this.userRepository.save(user);
+
+      return { accessToken, refreshToken };
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      throw new InternalServerErrorException('로그인 중 오류가 발생했습니다.');
     }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('비밀번호가 일치하지 않습니다.');
-    }
-
-    const payload = { id: user.id, email: user.email };
-    const accessToken = this.jwtService.sign(payload, {
-      secret: process.env.ACCESS_TOKEN_SECRET,
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN,
-    });
-
-    const refreshToken = this.jwtService.sign(payload, {
-      secret: process.env.REFRESH_TOKEN_SECRET,
-      expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN,
-    });
-
-
-    user.refreshToken = refreshToken;
-    await this.userRepository.save(user);
-
-    return { accessToken, refreshToken };
   }
 
   async logout(userId: string): Promise<{ message: string }> {
