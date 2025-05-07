@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { SignupDto } from './dto/signup.dto';
 import { User } from '../user/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -60,8 +60,8 @@ export class AuthService {
       throw new UnauthorizedException('비밀번호가 일치하지 않습니다.');
     }
 
-    const payload = { sub: user.id, email: user.email };
-    const accessToken = this.jwtService.sign(payload, { 
+    const payload = { id: user.id, email: user.email };
+    const accessToken = this.jwtService.sign(payload, {
       secret: process.env.ACCESS_TOKEN_SECRET,
       expiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN,
     });
@@ -76,5 +76,26 @@ export class AuthService {
     await this.userRepository.save(user);
 
     return { accessToken, refreshToken };
+  }
+
+  async logout(userId: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+    }
+
+    if (user.refreshToken === null) {
+      throw new BadRequestException('이미 로그아웃된 사용자입니다.');
+    }
+
+    try {
+      user.refreshToken = null;
+      await this.userRepository.save(user);
+    } catch (e) {
+      throw new InternalServerErrorException('로그아웃 처리 중 오류가 발생했습니다.');
+    }
+    return {
+      message: '로그아웃이 완료되었습니다.',
+    };
   }
 }

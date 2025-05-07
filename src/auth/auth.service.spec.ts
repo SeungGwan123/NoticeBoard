@@ -182,3 +182,78 @@ describe('AuthService login', () => {
     ).rejects.toThrow('비밀번호가 일치하지 않습니다.');
   });
 });
+
+describe('AuthService logout', () => {
+  let module: TestingModule;
+  let authService: AuthService;
+  let userRepository: Repository<User>;
+  let dataSource: DataSource;
+  let testUserId: string;
+
+  const testUser = {
+    email: `logout-test-${Date.now()}@example.com`,
+    password: 'password123',
+    name: '테스트유저',
+    nickname: 'logouttester',
+  };
+
+  beforeAll(async () => {
+    module = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: process.env.DB_PASSWORD,
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        AuthModule,
+      ],
+    }).compile();
+
+    const app = module.createNestApplication();
+    await app.init();
+
+    authService = module.get(AuthService);
+    dataSource = module.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    const hashedPassword = await bcrypt.hash(testUser.password, 10);
+    const saved = await userRepository.save({
+      ...testUser,
+      password: hashedPassword,
+      refreshToken: 'test-refresh-token',
+    });
+
+    testUserId = String(saved.id);
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ email: testUser.email });
+    await dataSource.destroy();
+  });
+
+  it('✅ 정상 로그아웃 처리', async () => {
+    const result = await authService.logout(testUserId);
+    expect(result).toEqual({ message: '로그아웃이 완료되었습니다.' });
+
+    const user = await userRepository.findOneBy({ id: testUserId });
+    expect(user?.refreshToken).toBeNull();
+  });
+
+  it('❌ 존재하지 않는 사용자 → UnauthorizedException', async () => {
+    const nonExistentUUID = '11111111-1111-1111-1111-111111111111';
+    await expect(authService.logout(nonExistentUUID))
+      .rejects.toThrow('존재하지 않는 사용자입니다.');
+  });
+
+  it('❌ 이미 로그아웃된 사용자 → BadRequestException', async () => {
+    await expect(authService.logout(testUserId))
+      .rejects.toThrow('이미 로그아웃된 사용자입니다.');
+  });
+});

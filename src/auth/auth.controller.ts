@@ -9,6 +9,7 @@ import {
   Res,
   UseGuards,
   HttpCode,
+  Req,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -45,12 +46,11 @@ export class AuthController {
     return { accessToken, refreshToken };
   }
 
-  // @UseGuards(AccessTokenGuard)
-  // @Post('logout')
-  // async logout(
-  //   @Res({ passthrough: true }) res: Response,
-  //   @Body('refreshToken') refreshToken: string,
-  // ): Promise<{ message: string }> {
-  //   return this.authService.logout(res, refreshToken);
-  // }
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(200)
+  @Post('logout')
+  async logout(@Req() req: Request): Promise<{ message: string }> {
+    const userId = req['user'].id;
+    return this.authService.logout(userId);
+  }
 }

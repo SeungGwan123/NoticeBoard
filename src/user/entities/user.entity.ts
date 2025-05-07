@@ -26,8 +26,8 @@ export class User {
   @Column()
   password: string;
 
-  @Column({ nullable: true })
-  refreshToken: string;
+  @Column({ type: 'text', nullable: true })
+  refreshToken: string | null;
 
   @OneToMany(() => Post, (post) => post.author)
   posts: Post[];

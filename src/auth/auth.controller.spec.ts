@@ -178,7 +178,7 @@ describe('AuthController POST login', () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: validUser.email, password: validUser.password })
-      .expect(201);
+      .expect(200);
 
     expect(res.body.accessToken).toBeDefined();
     expect(res.body.refreshToken).toBeDefined();
@@ -241,5 +241,115 @@ describe('AuthController POST login', () => {
     });
 
     expect(user?.refreshToken).toBeDefined();
+  });
+});
+
+describe('AuthController POST logout', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let accessToken: string;
+  let userId: string;
+
+  const testUser = {
+    email: `logout-${Date.now()}@example.com`,
+    password: 'password123',
+    name: '테스트',
+    nickname: `logoutTest-${Date.now()}`,
+  };
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        AuthModule,
+        JwtModule.register({}), // for jwt decoding
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    // 회원가입 및 로그인
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const res = await request(app.getHttpServer()).post('/auth/login').send({
+      email: testUser.email,
+      password: testUser.password,
+    });
+
+    accessToken = res.body.accessToken;
+
+    const user = await userRepository.findOneBy({ email: testUser.email });
+    userId = user!.id;
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ email: testUser.email });
+    await app.close();
+  });
+
+  it('✅ 정상 로그아웃 요청 → 200 OK', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.message).toBe('로그아웃이 완료되었습니다.');
+  });
+
+  it('❌ 이미 로그아웃된 사용자 → 400 BadRequest', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(400);
+
+    expect(res.body.message).toBe('이미 로그아웃된 사용자입니다.');
+  });
+
+  it('❌ accessToken 누락 → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .expect(401);
+
+    expect(res.body.message).toBeDefined();
+  });
+
+  it('❌ 잘못된 accessToken → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Authorization', `Bearer invalid.token.here`)
+      .expect(401);
+
+    expect(res.body.message).toBeDefined();
+  });
+
+  it('❌ 삭제된 유저 → 401 Unauthorized', async () => {
+    const deletedUser = await userRepository.findOneBy({ email: testUser.email });
+    if (deletedUser) {
+      deletedUser.isDeleted = true;
+      await userRepository.save(deletedUser);
+    }
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+
+    expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
   });
 });
