@@ -24,7 +24,7 @@ import { AuthModule } from './auth/auth.module';
       password: String(process.env.DB_PASSWORD),
       database: process.env.DB_DATABASE,
       synchronize: process.env.DB_SYNC === 'true',
-      logging: true,
+      logging: false,
       autoLoadEntities: true,
     }),
     UserModule,
