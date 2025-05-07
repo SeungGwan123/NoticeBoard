@@ -6,12 +6,11 @@ import {
   OneToMany,
   CreateDateColumn,
   UpdateDateColumn,
-  DeleteDateColumn,
 } from 'typeorm';
-import { User } from 'src/user/entities/user.entity';
-import { File } from 'src/file/entities/file.entity';
-import { Comment } from 'src/comment/entities/comment.entity';
-import { Like } from 'src/like/entities/like.entity';
+import { User } from '../../user/entities/user.entity';
+import { File } from '../../file/entities/file.entity';
+import { Comment } from '../../comment/entities/comment.entity';
+import { Like } from '../../like/entities/like.entity';
 
 @Entity()
 export class Post {
@@ -51,6 +50,6 @@ export class Post {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @DeleteDateColumn()
-  deletedAt: Date;
+  @Column()
+  isDeleted: boolean;
 }

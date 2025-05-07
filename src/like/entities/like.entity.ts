@@ -5,8 +5,8 @@ import {
   CreateDateColumn,
   Unique,
 } from 'typeorm';
-import { User } from 'src/user/entities/user.entity';
-import { Post } from 'src/post/entities/post.entity';
+import { User } from '../../user/entities/user.entity';
+import { Post } from '../../post/entities/post.entity';
 
 @Entity()
 @Unique(['user', 'post']) // 유저가 하나의 게시글에 중복 좋아요 못하게

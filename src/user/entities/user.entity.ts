@@ -4,11 +4,10 @@ import {
   Column,
   OneToMany,
   CreateDateColumn,
-  DeleteDateColumn,
 } from 'typeorm';
-import { Post } from 'src/post/entities/post.entity';
-import { Comment } from 'src/comment/entities/comment.entity';
-import { Like } from 'src/like/entities/like.entity';
+import { Post } from '../../post/entities/post.entity';
+import { Comment } from '../../comment/entities/comment.entity';
+import { Like } from '../../like/entities/like.entity';
 
 @Entity()
 export class User {
@@ -21,13 +20,13 @@ export class User {
   @Column()
   name: string;
 
-  @Column({ unique: true })
+  @Column()
   nickname: string;
 
   @Column()
   password: string;
 
-  @Column()
+  @Column({ nullable: true })
   refreshToken: string;
 
   @OneToMany(() => Post, (post) => post.author)
@@ -42,6 +41,6 @@ export class User {
   @CreateDateColumn()
   createdAt: Date;
 
-  @DeleteDateColumn()
-  deletedAt: Date;
+  @Column({ default: false })
+  isDeleted: boolean;
 }

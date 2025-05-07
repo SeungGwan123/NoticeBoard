@@ -5,10 +5,9 @@ import {
   ManyToOne,
   OneToMany,
   CreateDateColumn,
-  DeleteDateColumn,
 } from 'typeorm';
-import { User } from 'src/user/entities/user.entity';
-import { Post } from 'src/post/entities/post.entity';
+import { User } from '../../user/entities/user.entity';
+import { Post } from '../../post/entities/post.entity';
 
 @Entity()
 export class Comment {
@@ -33,6 +32,6 @@ export class Comment {
   @CreateDateColumn()
   createdAt: Date;
 
-  @DeleteDateColumn()
-  deletedAt: Date;
+  @Column()
+  isDeleted: boolean;
 }

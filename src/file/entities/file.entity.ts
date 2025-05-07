@@ -5,7 +5,7 @@ import {
   ManyToOne,
   CreateDateColumn,
 } from 'typeorm';
-import { Post } from 'src/post/entities/post.entity';
+import { Post } from '../../post/entities/post.entity';
 
 @Entity()
 export class File {
