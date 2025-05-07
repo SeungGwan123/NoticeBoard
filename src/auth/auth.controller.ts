@@ -7,11 +7,14 @@ import {
   Param,
   Delete,
   Res,
+  UseGuards,
+  HttpCode,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
+import { AccessTokenGuard } from './guard/access-token.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -23,6 +26,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @HttpCode(200)
   async login(
     @Res({ passthrough: true }) res: Response,
     @Body() loginDto: LoginDto,
@@ -40,4 +44,13 @@ export class AuthController {
 
     return { accessToken, refreshToken };
   }
+
+  // @UseGuards(AccessTokenGuard)
+  // @Post('logout')
+  // async logout(
+  //   @Res({ passthrough: true }) res: Response,
+  //   @Body('refreshToken') refreshToken: string,
+  // ): Promise<{ message: string }> {
+  //   return this.authService.logout(res, refreshToken);
+  // }
 }
