@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
+import * as jwt from 'jsonwebtoken';
 
 @Injectable()
 export class AuthService {
@@ -94,5 +95,55 @@ export class AuthService {
     return {
       message: '로그아웃이 완료되었습니다.',
     };
+  }
+
+  async reissueToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> 
+  {
+    let payload: any;
+    const secret = process.env.REFRESH_TOKEN_SECRET;
+    if (!secret) {
+      throw new InternalServerErrorException('환경변수에 REFRESH_TOKEN_SECRET이 없습니다.');
+    }
+    try {
+      payload = jwt.verify(refreshToken, secret);
+    } catch (e) {
+      throw new UnauthorizedException('유효하지 않은 refreshToken입니다.');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: payload.id },
+    });
+
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+    }
+
+    if (user.refreshToken !== refreshToken) {
+      throw new UnauthorizedException('refreshToken이 일치하지 않습니다.');
+    }
+
+    const newPayload = { id: user.id, email: user.email };
+
+    try {
+      const newAccessToken = this.jwtService.sign(newPayload, {
+        secret: process.env.ACCESS_TOKEN_SECRET,
+        expiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN,
+      });
+
+      const newRefreshToken = this.jwtService.sign(newPayload, {
+        secret: process.env.REFRESH_TOKEN_SECRET,
+        expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN,
+      });
+
+      user.refreshToken = newRefreshToken;
+      await this.userRepository.save(user);
+
+      return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      };
+    } catch (e) {
+      throw new InternalServerErrorException('토큰 재발급 중 오류가 발생했습니다.');
+    }
   }
 }

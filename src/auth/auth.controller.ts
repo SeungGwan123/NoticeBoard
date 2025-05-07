@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -49,8 +50,17 @@ export class AuthController {
   @UseGuards(AccessTokenGuard)
   @HttpCode(200)
   @Post('logout')
-  async logout(@Req() req: Request): Promise<{ message: string }> {
+  logout(@Req() req: Request): Promise<{ message: string }> {
     const userId = req['user'].id;
     return this.authService.logout(userId);
+  }
+
+  @Post('refresh-token')
+  @HttpCode(200)
+  refreshToken(@Body('refreshToken') refreshToken: string) {
+    if (!refreshToken) {
+      throw new BadRequestException('refreshToken이 존재하지 않습니다.');
+    }
+    return this.authService.reissueToken(refreshToken);
   }
 }

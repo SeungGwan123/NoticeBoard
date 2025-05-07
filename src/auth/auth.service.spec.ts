@@ -257,3 +257,99 @@ describe('AuthService logout', () => {
       .rejects.toThrow('이미 로그아웃된 사용자입니다.');
   });
 });
+
+describe('AuthService reissueToken', () => {
+  let app: INestApplication;
+  let authService: AuthService;
+  let userRepository: Repository<User>;
+  let dataSource: DataSource;
+  let refreshToken: string;
+  let user: User;
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        AuthModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    authService = moduleFixture.get(AuthService);
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    // 유저 등록 + 로그인
+    const timestamp = Date.now();
+    const email = `reissue-${timestamp}@example.com`;
+    const password = 'password123';
+
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email, password, name: '리이슈', nickname: `nick-${timestamp}` });
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password });
+
+    refreshToken = res.body.refreshToken;
+    user = await userRepository.findOneByOrFail({ email });
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ id: user.id });
+    await app.close();
+  });
+
+  it('✅ 정상적인 재발급 → accessToken + refreshToken 반환', async () => {
+    const result = await authService.reissueToken(refreshToken);
+    expect(result.accessToken).toBeDefined();
+    expect(result.refreshToken).toBeDefined();
+  });
+
+  it('❌ 토큰 형식 잘못됨 → UnauthorizedException', async () => {
+    await expect(authService.reissueToken('invalid-token')).rejects.toThrow('유효하지 않은 refreshToken입니다.');
+  });
+
+  it('❌ 존재하지 않는 유저 ID → UnauthorizedException', async () => {
+    const fakeToken = jwt.sign({ id: '11111111-1111-1111-1111-111111111111', email: 'a@a.com' }, process.env.REFRESH_TOKEN_SECRET!);
+    await expect(authService.reissueToken(fakeToken)).rejects.toThrow('존재하지 않는 사용자입니다.');
+  });
+
+  it('❌ 삭제된 유저 → UnauthorizedException', async () => {
+    await userRepository.update(user.id, { isDeleted: true });
+
+    await expect(authService.reissueToken(refreshToken)).rejects.toThrow('존재하지 않는 사용자입니다.');
+
+    await userRepository.update(user.id, { isDeleted: false });
+  });
+
+  it('❌ DB의 refreshToken과 다름 → UnauthorizedException', async () => {
+    await userRepository.update(user.id, { refreshToken: null });
+
+    await expect(authService.reissueToken(refreshToken)).rejects.toThrow('refreshToken이 일치하지 않습니다.');
+  });
+
+  it('❌ 환경변수 누락 → InternalServerErrorException', async () => {
+    const original = process.env.REFRESH_TOKEN_SECRET;
+    delete process.env.REFRESH_TOKEN_SECRET;
+
+    await expect(authService.reissueToken(refreshToken)).rejects.toThrow('환경변수에 REFRESH_TOKEN_SECRET이 없습니다.');
+
+    process.env.REFRESH_TOKEN_SECRET = original;
+  });
+});

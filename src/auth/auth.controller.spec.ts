@@ -353,3 +353,120 @@ describe('AuthController POST logout', () => {
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
   });
 });
+
+describe('AuthController POST refresh-token', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let refreshToken: string;
+  let user: User;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        AuthModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+
+    // 사용자 생성 및 로그인
+    const timestamp = Date.now();
+    const validUser = {
+      email: `test-${timestamp}@example.com`,
+      password: 'password123',
+      name: '테스트',
+      nickname: `tester-${timestamp}`,
+    };
+
+    await request(app.getHttpServer()).post('/auth/signup').send(validUser);
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: validUser.email, password: validUser.password });
+
+    refreshToken = res.body.refreshToken;
+    user = await dataSource.getRepository(User).findOneByOrFail({ email: validUser.email });
+  });
+
+  afterAll(async () => {
+    await dataSource.getRepository(User).delete({ id: user.id });
+    await app.close();
+  });
+
+  it('✅ 유효한 refreshToken → 200 OK', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/refresh-token')
+      .send({ refreshToken })
+      .expect(200);
+
+    expect(res.body.accessToken).toBeDefined();
+    expect(res.body.refreshToken).toBeDefined();
+  });
+
+  it('❌ refreshToken 누락 → 400', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/refresh-token')
+      .send({})
+      .expect(400);
+
+    expect(res.body.message).toContain('refreshToken이 존재하지 않습니다.');
+  });
+
+  it('❌ 형식이 잘못된 refreshToken → 401', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/refresh-token')
+      .send({ refreshToken: 'not-a-token' })
+      .expect(401);
+
+    expect(res.body.message).toBe('유효하지 않은 refreshToken입니다.');
+  });
+
+  it('❌ refreshToken 일치하지 않음 → 401', async () => {
+    const forged = jwt.sign({ id: user.id, email: user.email }, 'wrong-secret');
+    const res = await request(app.getHttpServer())
+      .post('/auth/refresh-token')
+      .send({ refreshToken: forged })
+      .expect(401);
+
+    expect(res.body.message).toBe('유효하지 않은 refreshToken입니다.');
+  });
+
+  it('❌ 삭제된 사용자 → 401', async () => {
+    await dataSource.getRepository(User).update(user.id, { isDeleted: true });
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/refresh-token')
+      .send({ refreshToken })
+      .expect(401);
+
+    expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
+
+    await dataSource.getRepository(User).update(user.id, { isDeleted: false }); // 복구
+  });
+
+  it('❌ refreshToken이 DB와 일치하지 않음 → 401', async () => {
+    await dataSource.getRepository(User).update(user.id, { refreshToken: null });
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/refresh-token')
+      .send({ refreshToken })
+      .expect(401);
+
+    expect(res.body.message).toBe('refreshToken이 일치하지 않습니다.');
+  });
+});
