@@ -14,7 +14,9 @@ import { Like } from '../like/entities/like.entity';
 import { PostModule } from './post.module';
 import * as express from 'express';
 import { FileModule } from '../file/file.module';
-
+import { PostStats } from './entities/post-stats.entity';
+import { CommentModule } from '../comment/comment.module';
+import { v4 as uuid } from 'uuid';
 
 describe('PostController POST post', () => {
   let app: INestApplication;
@@ -43,12 +45,11 @@ describe('PostController POST post', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
+        TypeOrmModule.forFeature([Post, PostStats, User, File, Comment, Like]),
         AuthModule,
-        UserModule,
         PostModule,
-        FileModule,
       ],
     }).compile();
 
@@ -73,9 +74,10 @@ describe('PostController POST post', () => {
     const postRepository = dataSource.getRepository(Post);
 
     await fileRepository.delete({});
-    await postRepository.delete({ author: { id: user.id } });
-    await userRepository.delete({ email: testUser.email });
-
+    if (user) {
+      await postRepository.delete({ author: { id: user.id } });
+      await userRepository.delete({ email: testUser.email });
+    }
     await app.close();
   });
 
@@ -328,5 +330,173 @@ describe('PostController POST post', () => {
         ],
       })
       .expect(201); // 비즈니스 로직에 따라 제한할 수도 있음
+  });
+});
+
+describe('PostController GET /post/:postId', () => {
+  const uniq = (tag: string) => `${tag}-${uuid()}@example.com`;
+  const PASSWORD = 'password1234';
+
+  let app: INestApplication;
+  let ds: DataSource;
+
+  let userRepo: Repository<User>;
+  let postRepo: Repository<Post>;
+  let statsRepo: Repository<PostStats>;
+  let fileRepo: Repository<File>;
+  let commentRepo: Repository<Comment>;
+
+  let token: string;
+  let sharedUser: User;
+
+  const newPost = async (over: Partial<Post> = {}) =>
+    postRepo.save({ title: 't', content: 'c', author: sharedUser, ...over });
+
+  const authGet = (url: string) =>
+    request(app.getHttpServer())
+      .get(url)
+      .set('Authorization', `Bearer ${token}`);
+
+  beforeAll(async () => {
+    const mod: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, PostStats, File, Comment, Like],
+        }),
+        TypeOrmModule.forFeature([User, Post, PostStats, File, Comment, Like]),
+        AuthModule,
+        PostModule,
+        CommentModule,
+      ],
+    }).compile();
+
+    app = mod.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    ds = mod.get(DataSource);
+    userRepo = ds.getRepository(User);
+    postRepo = ds.getRepository(Post);
+    statsRepo = ds.getRepository(PostStats);
+    fileRepo = ds.getRepository(File);
+    commentRepo = ds.getRepository(Comment);
+
+    const email = uniq('shared');
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email, password: PASSWORD, name: 'shared', nickname: 'sh' })
+      .expect(201);
+
+    const login = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password: PASSWORD })
+      .expect(200);
+
+    token = login.body.accessToken;
+    sharedUser = await userRepo.findOneByOrFail({ email });
+  });
+
+  afterEach(async () => {
+    await fileRepo.delete({});
+    await commentRepo.delete({});
+    await statsRepo.delete({});
+    await postRepo.delete({});
+  });
+
+  afterAll(async () => {
+    await userRepo.delete(sharedUser!.id);
+    await app.close();
+  });
+
+  it('✅ 게시글 정상 조회', async () => {
+    const post  = await newPost();
+    await statsRepo.save({ post, viewCount: 5, likeCount: 0, commentCount: 0 });
+
+    const res = await authGet(`/post/${post.id}`).expect(200);
+
+    expect(res.body.id).toBe(post.id);
+    expect(res.body.stats.viewCount).toBe(6);   // +1
+  });
+
+  it('❌ 작성자가 삭제된 게시글 → 404', async () => {
+    const ghost = await userRepo.save({
+      email: uniq('ghost'),
+      password: PASSWORD,
+      name: 'g',
+      nickname: 'gg',
+      isDeleted: true,
+    });
+    const post = await postRepo.save({ title: 't', content: 'c', author: ghost });
+    await statsRepo.save({ post });
+
+    await authGet(`/post/${post.id}`).expect(404);
+  });
+
+  it('❌ 삭제된 게시글 → 404', async () => {
+    const post = await newPost({ isDeleted: true });
+    await authGet(`/post/${post.id}`).expect(404);
+  });
+
+  it('❌ 통계 정보 없음 → 500', async () => {
+    const post = await newPost();
+    await authGet(`/post/${post.id}`).expect(500);
+  });
+
+  it('✅ 파일 포함 게시글', async () => {
+    const post = await newPost();
+    await statsRepo.save({ post });
+    await fileRepo.save({
+      url: 'https://a.com/a.jpg',
+      originalName: 'a.jpg',
+      mimeType: 'image/jpeg',
+      size: 10,
+      post,
+    });
+
+    const res = await authGet(`/post/${post.id}`).expect(200);
+    expect(res.body.files.length).toBe(1);
+    expect(res.body.files[0].url).toBe('https://a.com/a.jpg');
+  });
+
+  it('✅ 댓글 + 대댓글 트리 (작성자 정상)', async () => {
+    const post = await newPost();
+    await statsRepo.save({ post });
+
+    const parent = await commentRepo.save({ content: '부모', author: sharedUser, post });
+    await commentRepo.save({ content: '자식', author: sharedUser, post, parent });
+
+    const res = await authGet(`/post/${post.id}`).expect(200);
+    expect(res.body.comments.length).toBe(1);
+    expect(res.body.comments[0].children.length).toBe(1);
+  });
+
+  it('❌ 댓글 작성자 삭제 → 댓글 제외', async () => {
+    const ghost = await userRepo.save({
+      email: uniq('c-ghost'),
+      password: PASSWORD,
+      name: 'g',
+      nickname: 'gg',
+      isDeleted: true,
+    });
+    const post = await newPost();
+    await statsRepo.save({ post });
+
+    await commentRepo.save({ content: '고스트댓글', author: ghost, post });
+
+    const res = await authGet(`/post/${post.id}`).expect(200);
+    expect(res.body.comments.length).toBe(0);
+  });
+
+  it('❌ 존재하지 않는 ID → 404', async () => {
+    await authGet('/post/999999999').expect(404);
   });
 });

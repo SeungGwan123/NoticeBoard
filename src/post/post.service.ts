@@ -1,11 +1,19 @@
 import { InjectRepository } from '@nestjs/typeorm';
 import { PostStats } from '../post/entities/post-stats.entity';
 import { CreatePostDto } from './dto/create-post.dto';
-import { Injectable, NotFoundException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Post } from './entities/post.entity';
 import { User } from '../user/entities/user.entity';
 import { Repository, DataSource } from 'typeorm';
 import { File } from '../file/entities/file.entity';
+import { GetPostResponseDto } from './dto/get-post-response.dto';
+import { NestedCommentDto } from '../comment/dto/comment.dto';
+import { Comment } from '../comment/entities/comment.entity';
 
 @Injectable()
 export class PostService {
@@ -18,6 +26,9 @@ export class PostService {
 
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+
+    @InjectRepository(Comment)
+    private readonly commentRepository: Repository<Comment>,
 
     private readonly dataSource: DataSource,
   ) {}
@@ -77,5 +88,73 @@ export class PostService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async getPostById(postId: number): Promise<GetPostResponseDto> {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['author', 'files'],
+    });
+
+    if (!post || post.isDeleted) {
+      throw new NotFoundException('게시글이 존재하지 않습니다.');
+    }
+    if (!post.author || post.author.isDeleted) {
+      throw new NotFoundException('게시글이 존재하지 않습니다.');
+    }
+
+    const stats = await this.postStatsRepository.findOneBy({ post: { id: post.id } });
+    if (!stats) {
+      throw new InternalServerErrorException('통계 정보가 없습니다.');
+    }
+    this.postStatsRepository.increment({ id: stats.id }, 'viewCount', 1);
+
+    const rawComments = await this.commentRepository.find({
+      where: { post: { id: post.id }, isDeleted: false },
+      relations: ['author', 'parent'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const commentMap = new Map<number, NestedCommentDto>();
+    const nested: NestedCommentDto[] = [];
+
+    for (const c of rawComments) {
+      if (!c.author || c.author.isDeleted) continue;
+
+      const item: NestedCommentDto = {
+        id: c.id,
+        content: c.content,
+        createdAt: c.createdAt,
+        parentId: c.parent?.id ?? null,
+        author: { id: c.author.id, nickname: c.author.nickname },
+        children: [],
+      };
+
+      commentMap.set(c.id, item);
+
+      if (item.parentId === null) nested.push(item);
+      else commentMap.get(item.parentId)?.children.push(item);
+    }
+
+    return {
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      createdAt: post.createdAt,
+      author: { id: post.author.id, nickname: post.author.nickname },
+      files: post.files.map(f => ({
+        url: f.url,
+        originalName: f.originalName,
+        mimeType: f.mimeType,
+        size: f.size,
+      })),
+      stats: {
+        postId: post.id,
+        viewCount: stats.viewCount + 1,
+        likeCount: stats.likeCount,
+        commentCount: stats.commentCount,
+      },
+      comments: nested,
+    };
   }
 }

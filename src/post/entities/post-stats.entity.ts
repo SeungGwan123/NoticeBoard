@@ -7,6 +7,7 @@ export class PostStats {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('idx_post_stats_post_id', ['post'])
   @OneToOne(() => Post, { onDelete: 'CASCADE' })
   @JoinColumn()
   post: Post;

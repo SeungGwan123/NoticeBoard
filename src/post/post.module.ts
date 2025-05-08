@@ -6,10 +6,11 @@ import { Post } from '../post/entities/post.entity';
 import { PostStats } from './entities/post-stats.entity';
 import { User } from '../user/entities/user.entity';
 import { CommonModule } from '../common/common.module';
+import { Comment } from '../comment/entities/comment.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Post, PostStats, User, File]),
+    TypeOrmModule.forFeature([Post, PostStats, User, File, Comment]),
     CommonModule,
   ],
   controllers: [PostController],
