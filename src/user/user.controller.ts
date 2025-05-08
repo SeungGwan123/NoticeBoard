@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { AccessTokenGuard } from '../common/guard/access-token.guard';
@@ -45,5 +46,14 @@ export class UserController {
   deleteMe(@Req() req: Request): Promise<{ message: string }> {
     const userId = req['user'].id;
     return this.userService.deleteMe(userId);
+  }
+
+  @Get('me/posts')
+  getMyPosts(
+    @Req() req: Request,
+    @Query('cursor') lastPostId?: string,
+  ): Promise<{ posts: { id: string; title: string }[] }> {
+    const userId = req['user'].id;
+    return this.userService.getMyPosts(userId, lastPostId);
   }
 }
