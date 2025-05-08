@@ -117,7 +117,7 @@ describe('UserController GET me', () => {
   });
 });
 
-describe('UserController PATCH /me', () => {
+describe('UserController PATCH me', () => {
   let app: INestApplication;
   let dataSource: DataSource;
   let userRepository: Repository<User>;
@@ -231,7 +231,7 @@ describe('UserController PATCH /me', () => {
   });
 });
 
-describe('UserController GET /:userId', () => {
+describe('UserController GET :userId', () => {
   let app: INestApplication;
   let dataSource: DataSource;
   let userRepository: Repository<User>;
@@ -352,6 +352,93 @@ describe('UserController GET /:userId', () => {
   it('❌ 토큰 없이 요청 → 401 Unauthorized', async () => {
     const res = await request(app.getHttpServer())
       .get(`/user/${targetUser.id}`)
+      .expect(401);
+
+    expect(res.body.message).toBe('Access Token이 존재하지 않습니다.');
+  });
+});
+
+describe('UserController DELETE me', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let user: User;
+  let accessToken: string;
+
+  const testUser = {
+    email: `delete-me-${Date.now()}@example.com`,
+    password: 'password123',
+    name: '삭제유저',
+    nickname: '삭제닉',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        AuthModule,
+        UserModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = loginRes.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+    if (!user) throw new Error('user가 저장되지 않았습니다.');
+  });
+
+  afterAll(async () => {
+    if (user?.id) await userRepository.delete({ id: user.id });
+    await app.close();
+  });
+
+  it('✅ 정상 삭제 → 200 OK', async () => {
+    const res = await request(app.getHttpServer())
+      .delete('/user/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body).toEqual({ message: '사용자 정보가 삭제되었습니다.' });
+
+    const updated = await userRepository.findOneBy({ id: user.id });
+    expect(updated?.isDeleted).toBe(true);
+  });
+
+  it('❌ 이미 삭제된 유저 → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .delete('/user/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+
+    expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
+  });
+
+  it('❌ 토큰 없이 요청 → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .delete('/user/me')
       .expect(401);
 
     expect(res.body.message).toBe('Access Token이 존재하지 않습니다.');

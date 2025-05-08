@@ -256,3 +256,85 @@ describe('UserService getUser', () => {
     await expect(userService.getUser(nonExistentId)).rejects.toThrow(UnauthorizedException);
   });
 });
+
+describe('UserService deleteMe', () => {
+  let userService: UserService;
+  let userRepository: Repository<User>;
+  let dataSource: DataSource;
+  let user: User;
+
+  const testUser = {
+    email: `delete-me-${Date.now()}@example.com`,
+    password: 'password123',
+    name: '삭제유저',
+    nickname: '삭제닉',
+  };
+
+  beforeAll(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        TypeOrmModule.forFeature([User]),
+      ],
+      providers: [UserService],
+    }).compile();
+
+    userService = module.get(UserService);
+    dataSource = module.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    user = userRepository.create(testUser);
+    await userRepository.save(user);
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ id: user.id });
+    await dataSource.destroy();
+  });
+
+  it('✅ 정상 삭제 → 성공 메시지 & isDeleted true', async () => {
+    const result = await userService.deleteMe(user.id);
+    expect(result).toEqual({ message: '사용자 정보가 삭제되었습니다.' });
+
+    const updated = await userRepository.findOneBy({ id: user.id });
+    expect(updated?.isDeleted).toBe(true);
+  });
+
+  it('❌ 이미 삭제된 유저 → UnauthorizedException', async () => {
+    await expect(userService.deleteMe(user.id)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('❌ 존재하지 않는 UUID → UnauthorizedException', async () => {
+    const fakeId = uuidv4();
+    await expect(userService.deleteMe(fakeId)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('❌ update 실패 → InternalServerErrorException', async () => {
+    const testUser2 = await userRepository.save({
+      email: `delete-test-${Date.now()}@example.com`,
+      password: 'password123',
+      name: '업데이트실패',
+      nickname: '실패',
+    });
+
+    const spy = jest
+      .spyOn(userRepository, 'update')
+      .mockResolvedValue({ affected: 0 } as any);
+
+    await expect(userService.deleteMe(testUser2.id)).rejects.toThrow(InternalServerErrorException);
+
+    spy.mockRestore();
+    await userRepository.delete({ id: testUser2.id });
+  });
+});

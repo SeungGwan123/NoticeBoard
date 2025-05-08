@@ -56,4 +56,17 @@ export class UserService {
       nickname: user.nickname,
     };
   }
+
+  async deleteMe(userId: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+    }
+
+    const result = await this.userRepository.update(userId, { isDeleted: true });
+    if (result.affected === 0) {
+      throw new InternalServerErrorException('사용자 삭제에 실패했습니다.');
+    }
+    return { message: '사용자 정보가 삭제되었습니다.' };
+  }
 }

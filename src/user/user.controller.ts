@@ -40,4 +40,10 @@ export class UserController {
   ): Promise<{ name: string; nickname: string }> {
     return this.userService.getUser(id);
   }
+
+  @Delete('me')
+  deleteMe(@Req() req: Request): Promise<{ message: string }> {
+    const userId = req['user'].id;
+    return this.userService.deleteMe(userId);
+  }
 }
