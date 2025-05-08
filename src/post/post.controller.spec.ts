@@ -163,7 +163,7 @@ describe('PostController POST post', () => {
       .post('/post')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: '삭제된 유저', content: '본문입니다.', files: [] })
-      .expect(404);
+      .expect(401);
     await userRepository.update(user.id, { isDeleted: false });
   });
 
