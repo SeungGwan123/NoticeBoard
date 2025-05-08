@@ -10,7 +10,7 @@ import { LikeModule } from './like/like.module';
 import { CommentModule } from './comment/comment.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AuthModule } from './auth/auth.module';
-import { CommonModule } from 'common/common.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
