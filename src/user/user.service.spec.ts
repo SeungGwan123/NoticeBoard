@@ -3,13 +3,13 @@ import { UserService } from './user.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './entities/user.entity';
 import { ConfigModule } from '@nestjs/config';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Post } from '../post/entities/post.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { Like } from '../like/entities/like.entity';
 import { File } from '../file/entities/file.entity';
-import { InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { InternalServerErrorException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 
 describe('UserService getMe', () => {
@@ -241,18 +241,18 @@ describe('UserService getUser', () => {
     });
   });
 
-  it('❌ 삭제된 유저 → UnauthorizedException', async () => {
+  it('❌ 삭제된 유저 → NotFoundException', async () => {
     await userRepository.update(user.id, { isDeleted: true });
 
-    await expect(userService.getUser(user.id)).rejects.toThrow(UnauthorizedException);
+    await expect(userService.getUser(user.id)).rejects.toThrow(NotFoundException);
 
     await userRepository.update(user.id, { isDeleted: false });
   });
 
-  it('❌ 존재하지 않는 UUID → UnauthorizedException', async () => {
+  it('❌ 존재하지 않는 UUID → NotFoundException', async () => {
     const nonExistentId = uuidv4();
 
-    await expect(userService.getUser(nonExistentId)).rejects.toThrow(UnauthorizedException);
+    await expect(userService.getUser(nonExistentId)).rejects.toThrow(NotFoundException);
   });
 });
 

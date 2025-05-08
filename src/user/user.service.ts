@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -57,7 +57,7 @@ export class UserService {
   async getUser(userId: string): Promise<{ name: string; nickname: string }> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user || user.isDeleted) {
-      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+      throw new NotFoundException('존재하지 않는 사용자입니다.');
     }
     return {
       name: user.name,

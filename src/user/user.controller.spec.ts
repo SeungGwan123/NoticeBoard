@@ -328,7 +328,7 @@ describe('UserController GET :userId', () => {
     const res = await request(app.getHttpServer())
       .get(`/user/${targetUser.id}`)
       .set('Authorization', `Bearer ${accessToken}`)
-      .expect(401);
+      .expect(404);
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
 
@@ -341,7 +341,7 @@ describe('UserController GET :userId', () => {
     const res = await request(app.getHttpServer())
       .get(`/user/${nonExistentId}`)
       .set('Authorization', `Bearer ${accessToken}`)
-      .expect(401);
+      .expect(404);
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
   });
