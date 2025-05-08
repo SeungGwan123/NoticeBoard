@@ -11,6 +11,7 @@ import { BadRequestException, InternalServerErrorException, NotFoundException } 
 import { ConfigModule } from '@nestjs/config';
 import { Like } from '../like/entities/like.entity';
 import { Comment } from '../comment/entities/comment.entity';
+import { FileDto } from '../file/dto/file.dto';
 
 describe('PostService createPost', () => {
   let postService: PostService;
@@ -96,7 +97,6 @@ describe('PostService createPost', () => {
           url: 'https://example.com/a.jpg',
           originalName: 'a.jpg',
           mimeType: 'image/jpeg',
-          size: null,
         } as any,
       ],
     };
@@ -247,5 +247,135 @@ describe('PostService getPostById', () => {
 
     const result = await postService.getPostById(post.id);
     expect(result.comments.length).toBe(0);
+  });
+});
+
+describe('PostService updatePost', () => {
+  let service: PostService;
+  let ds: DataSource;
+
+  let userRepo: Repository<User>;
+  let postRepo: Repository<Post>;
+  let fileRepo: Repository<File>;
+
+  let user: User;
+  let post: Post;
+
+  const dto = (files: FileDto[] = []): CreatePostDto => ({
+    title: '수정 제목',
+    content: '수정된 본문',
+    files,
+  });
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, PostStats, File, Comment, Like],
+        }),
+        TypeOrmModule.forFeature([User, Post, PostStats, File, Comment]),
+      ],
+      providers: [PostService],
+    }).compile();
+
+    service = mod.get(PostService);
+    ds = mod.get(DataSource);
+    userRepo = ds.getRepository(User);
+    postRepo = ds.getRepository(Post);
+    fileRepo = ds.getRepository(File);
+
+    user = await userRepo.save({
+      email: 'edit@example.com',
+      password: '1234',
+      name: 'u',
+      nickname: 'nn',
+    });
+    post = await postRepo.save({ title: '원본', content: '본문', author: user });
+  });
+
+  afterEach(async () => {
+    await fileRepo.delete({});
+    await postRepo.update({}, { title: '원본', content: '본문', isDeleted: false });
+    await userRepo.update({}, { isDeleted: false });
+  });
+
+  afterAll(async () => {
+    await fileRepo.delete({});
+    await postRepo.delete({});
+    await userRepo.delete({});
+    await ds.destroy();
+  });
+
+  it('✅ 정상 수정', async () => {
+    const res = await service.updatePost(user.id, post.id, dto());
+    expect(res.message).toBe('게시글이 수정되었습니다.');
+  });
+
+  it('❌ 존재하지 않거나 탈퇴한 유저', async () => {
+    await expect(
+      service.updatePost('11111111-1111-1111-1111-111111111111', post.id, dto()),
+    ).rejects.toThrow(NotFoundException);
+
+    await userRepo.update(user.id, { isDeleted: true });
+    await expect(service.updatePost(user.id, post.id, dto())).rejects.toThrow(NotFoundException);
+  });
+
+  it('❌ 존재하지 않거나 삭제된 게시글', async () => {
+    await expect(service.updatePost(user.id, 987654321, dto())).rejects.toThrow(NotFoundException);
+
+    await postRepo.update(post.id, { isDeleted: true });
+    await expect(service.updatePost(user.id, post.id, dto())).rejects.toThrow(NotFoundException);
+  });
+
+  it('❌ 다른 사용자가 수정하려는 경우', async () => {
+    const stranger = await userRepo.save({
+      email: 'stranger@example.com',
+      password: '1234',
+      name: 's',
+      nickname: 'ss',
+    });
+
+    await expect(service.updatePost(stranger.id, post.id, dto())).rejects.toThrow(NotFoundException);
+  });
+
+  it('❌ 파일 10개 초과', async () => {
+    const files: FileDto[] = Array.from({ length: 11 }).map((_, i) => ({
+      url: `https://x.com/${i}`,
+      originalName: `x${i}.jpg`,
+      mimeType: 'image/jpeg',
+      size: 100,
+    }));
+
+    await expect(service.updatePost(user.id, post.id, dto(files))).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('✅ 파일 size 가 null/음수면 0 으로 저장', async () => {
+    const files: FileDto[] = [
+      {
+        url: 'https://a.com',
+        originalName: 'a',
+        mimeType: 'image/png',
+      } as any,
+      {
+        url: 'https://b.com',
+        originalName: 'b',
+        mimeType: 'image/png',
+        size: -123,
+      },
+    ];
+
+    const res = await service.updatePost(user.id, post.id, dto(files));
+    expect(res.message).toBe('게시글이 수정되었습니다.');
   });
 });

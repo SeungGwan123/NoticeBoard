@@ -157,4 +157,59 @@ export class PostService {
       comments: nested,
     };
   }
+
+  async updatePost(
+    userId: string,
+    postId: number,
+    dto: CreatePostDto,
+  ): Promise<{ message: string }> {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user || user.isDeleted) {
+      throw new NotFoundException('존재하지 않는 사용자입니다.');
+    }
+
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['author', 'files'],
+    });
+    if (!post || post.isDeleted || post.author.id !== userId) {
+      throw new NotFoundException('수정할 게시글이 존재하지 않습니다.');
+    }
+
+    const files = dto.files ?? [];
+    if (files.length > 10) {
+      throw new BadRequestException('파일은 최대 10개까지 첨부할 수 있습니다.');
+    }
+
+    const fileEntities = files.map((file) =>
+      this.postRepository.manager.create(File, {
+        url: file.url,
+        originalName: file.originalName,
+        mimeType: file.mimeType,
+        size: file.size != null && file.size >= 0 ? file.size : 0,
+        post,
+      }),
+    );
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      post.title = dto.title;
+      post.content = dto.content;
+
+      await queryRunner.manager.delete(File, { post: { id: post.id } });
+      await queryRunner.manager.save(File, fileEntities);
+      await queryRunner.manager.save(Post, post);
+
+      await queryRunner.commitTransaction();
+      return { message: '게시글이 수정되었습니다.' };
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw new InternalServerErrorException('게시글 수정에 실패했습니다.');
+    } finally {
+      await queryRunner.release();
+    }
+  }
 }

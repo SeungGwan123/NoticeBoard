@@ -500,3 +500,233 @@ describe('PostController GET /post/:postId', () => {
     await authGet('/post/999999999').expect(404);
   });
 });
+
+describe('PostController PATCH /post/:postId', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepo: Repository<User>;
+  let postRepo: Repository<Post>;
+  let fileRepo: Repository<File>;
+  let token: string;
+  let user: User;
+
+  const testUser = {
+    email: `update-e2e-${Date.now()}@example.com`,
+    password: 'password1234',
+    name: '수정자',
+    nickname: '업데이터',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, File, PostStats],
+        }),
+        TypeOrmModule.forFeature([User, Post, File, PostStats]),
+        AuthModule,
+        PostModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepo = dataSource.getRepository(User);
+    postRepo = dataSource.getRepository(Post);
+    fileRepo = dataSource.getRepository(File);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+    token = loginRes.body.accessToken;
+    user = await userRepo.findOneByOrFail({ email: testUser.email });
+  });
+
+  afterEach(async () => {
+    await fileRepo.delete({});
+    await postRepo.delete({});
+  });
+
+  afterAll(async () => {
+    await userRepo.delete(user.id);
+    await app.close();
+  });
+
+  it('✅ 정상 수정', async () => {
+    const post = await postRepo.save({ title: '기존 제목', content: '기존 내용', author: user });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: '수정된 제목',
+        content: '수정된 내용',
+        files: [],
+      })
+      .expect(200);
+  });
+
+  it('❌ 게시글 없음 → 404', async () => {
+    await request(app.getHttpServer())
+      .patch('/post/9999999')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '무제', content: '내용', files: [] })
+      .expect(404);
+  });
+
+  it('❌ 다른 유저의 게시글 → 404', async () => {
+    const other = await userRepo.save({ email: 'other@test.com', password: '1234', name: 'o', nickname: 'oo' });
+    const post = await postRepo.save({ title: 't', content: 'c', author: other });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '변경', content: '변경', files: [] })
+      .expect(404);
+  });
+
+  it('❌ 삭제된 게시글 → 404', async () => {
+    const post = await postRepo.save({ title: '삭제된', content: 'c', author: user, isDeleted: true });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '변경', content: '변경', files: [] })
+      .expect(404);
+  });
+
+  it('❌ 파일 11개 → 400', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    const files = Array.from({ length: 11 }).map((_, i) => ({
+      url: `https://f.com/${i}`,
+      originalName: `file${i}.jpg`,
+      mimeType: 'image/jpeg',
+      size: 100,
+    }));
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '제목', content: '내용', files })
+      .expect(400);
+  });
+
+  it('❌ title이 빈 문자열 → 400 + 에러 메시지 확인', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '', content: '내용', files: [] })
+      .expect(400);
+
+    expect(res.body.message).toContain('제목은 1자 이상이어야 합니다.');
+  });
+
+  it('❌ content가 빈 문자열 → 400 + 에러 메시지 확인', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '제목', content: '', files: [] })
+      .expect(400);
+
+    expect(res.body.message).toContain('내용은 1자 이상이어야 합니다.');
+  });
+
+  it('❌ files가 배열이 아님 → 400', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '제목', content: '본문', files: {} })
+      .expect(400);
+  });
+
+  it('❌ files 내부가 비정상 객체 → 400', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '제목', content: '본문', files: [{ url: 123 }] })
+      .expect(400);
+  });
+
+  it('❌ 파일 필드 누락 → 400', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: '제목',
+        content: '본문',
+        files: [{ url: 'https://example.com/image.jpg' }],
+      })
+      .expect(400);
+  });
+
+  it('❌ size에 문자열 전달 → 400', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: '제목',
+        content: '본문',
+        files: [
+          {
+            url: 'https://example.com/image.jpg',
+            originalName: 'image.jpg',
+            mimeType: 'image/jpeg',
+            size: '100KB',
+          },
+        ],
+      })
+      .expect(400);
+  });
+
+  it('❌ content가 숫자일 경우 → 400', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '제목', content: 1234 })
+      .expect(400);
+  });
+
+  it('❌ title에 XSS 스크립트 → 저장 실패해야 함', async () => {
+    const post = await postRepo.save({ title: 't', content: 'c', author: user });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: '<script>alert(1)</script>',
+        content: '스크립트 테스트',
+        files: [],
+      })
+      .expect(400);
+
+    expect(res.body.message).toContain('스크립트 태그는 사용할 수 없습니다.');
+  });
+});

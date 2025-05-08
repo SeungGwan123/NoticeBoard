@@ -36,4 +36,14 @@ export class PostController {
   ): Promise<GetPostResponseDto> {
     return this.postService.getPostById(postId);
   }
+
+  @Patch(':postId')
+  updatePost(
+    @Req() req: Request,
+    @Param('postId', ParseIntPipe) postId: number,
+    @Body() updatePostDto: CreatePostDto,
+  ): Promise<{ message: string }> {
+    const userId = req['user'].id;
+    return this.postService.updatePost(userId, postId, updatePostDto);
+  }
 }
