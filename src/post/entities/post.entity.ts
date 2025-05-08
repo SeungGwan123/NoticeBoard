@@ -6,16 +6,19 @@ import {
   OneToMany,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { File } from '../../file/entities/file.entity';
 import { Comment } from '../../comment/entities/comment.entity';
 import { Like } from '../../like/entities/like.entity';
 
+@Index('idx_created_id_title_author', ['createdAt', 'id', 'title', 'author'])
+@Index('idx_author_id_title', ['author', 'isDeleted', 'id', 'title'])
 @Entity()
 export class Post {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  id: number;
 
   @Column()
   title: string;
@@ -35,21 +38,12 @@ export class Post {
   @OneToMany(() => Like, (like) => like.post)
   likes: Like[];
 
-  @Column({ default: 0 })
-  viewCount: number;
-
-  @Column({ default: 0 })
-  likeCount: number;
-
-  @Column({ default: 0 })
-  commentCount: number;
-
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @Column()
+  @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
 }

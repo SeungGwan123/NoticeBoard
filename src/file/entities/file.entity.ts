@@ -13,8 +13,7 @@ export class File {
   id: string;
 
   @Column()
-  url: string; // S3 주소 등
-
+  url: string;
   @Column()
   originalName: string;
 
@@ -24,7 +23,7 @@ export class File {
   @Column({ nullable: true })
   size: number;
 
-  @ManyToOne(() => Post, (post) => post.files)
+  @ManyToOne(() => Post, (post) => post.files, { onDelete: 'CASCADE' })
   post: Post;
 
   @CreateDateColumn()

@@ -236,11 +236,16 @@ describe('AuthController POST login', () => {
   });
 
   it('🧪 DB에 refreshToken 저장 확인', async () => {
-    const user = await dataSource.getRepository(User).findOneBy({
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: validUser.email, password: validUser.password })
+      .expect(200);
+
+    const user = await dataSource.getRepository(User).findOneByOrFail({
       email: validUser.email,
     });
 
-    expect(user?.refreshToken).toBeDefined();
+    expect(user.refreshToken).toBeDefined();
   });
 });
 
@@ -274,7 +279,7 @@ describe('AuthController POST logout', () => {
           entities: [User, Post, Comment, Like, File],
         }),
         AuthModule,
-        JwtModule.register({}), // for jwt decoding
+        JwtModule.register({}),
       ],
     }).compile();
 
@@ -285,7 +290,6 @@ describe('AuthController POST logout', () => {
     dataSource = moduleFixture.get(DataSource);
     userRepository = dataSource.getRepository(User);
 
-    // 회원가입 및 로그인
     await request(app.getHttpServer()).post('/auth/signup').send(testUser);
     const res = await request(app.getHttpServer()).post('/auth/login').send({
       email: testUser.email,
@@ -385,7 +389,6 @@ describe('AuthController POST refresh-token', () => {
 
     dataSource = moduleFixture.get(DataSource);
 
-    // 사용자 생성 및 로그인
     const timestamp = Date.now();
     const validUser = {
       email: `test-${timestamp}@example.com`,
@@ -456,7 +459,7 @@ describe('AuthController POST refresh-token', () => {
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
 
-    await dataSource.getRepository(User).update(user.id, { isDeleted: false }); // 복구
+    await dataSource.getRepository(User).update(user.id, { isDeleted: false });
   });
 
   it('❌ refreshToken이 DB와 일치하지 않음 → 401', async () => {

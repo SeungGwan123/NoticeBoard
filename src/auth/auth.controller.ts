@@ -16,7 +16,7 @@ import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
-import { AccessTokenGuard } from './guard/access-token.guard';
+import { AccessTokenGuard } from '../common/guard/access-token.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -33,7 +33,8 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Body() loginDto: LoginDto,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const { accessToken, refreshToken } = await this.authService.login(loginDto);
+    const { accessToken, refreshToken } =
+      await this.authService.login(loginDto);
 
     // 배포환경에서 https통신이면 쿠키로 전송
     // res.cookie('refreshToken', refreshToken, {
