@@ -1,26 +1,79 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Comment } from './entities/comment.entity';
+import { Repository } from 'typeorm';
+import { Post } from '../post/entities/post.entity';
+import { User } from '../user/entities/user.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
-import { UpdateCommentDto } from './dto/update-comment.dto';
 
 @Injectable()
 export class CommentService {
-  create(createCommentDto: CreateCommentDto) {
-    return 'This action adds a new comment';
-  }
+  constructor(
+    @InjectRepository(Comment)
+    private readonly commentRepository: Repository<Comment>,
+    @InjectRepository(Post)
+    private readonly postRepository: Repository<Post>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
 
-  findAll() {
-    return `This action returns all comment`;
-  }
+  async create({
+    content,
+    postId,
+    parentId,
+    authorId,
+  }: {
+    content: string;
+    postId: number;
+    parentId?: number;
+    authorId: string;
+  }): Promise<{ message: string }> {
+    const author = await this.userRepository.findOneByOrFail({ id: authorId });
+    let post: Post;
+    try {
+      post = await this.postRepository.findOneByOrFail({ id: postId });
+      if (post.isDeleted) {
+        throw new NotFoundException('게시물이 존재하지 않습니다.');
+      }
+    } catch (err) {
+      throw new NotFoundException('게시물이 존재하지 않습니다.');
+    }
 
-  findOne(id: number) {
-    return `This action returns a #${id} comment`;
-  }
+    let parent: Comment | undefined | null = undefined;
+    if (parentId) {
+      parent = await this.commentRepository.findOne({
+        where: { id: parentId },
+        relations: ['post'],
+      });
 
-  update(id: number, updateCommentDto: UpdateCommentDto) {
-    return `This action updates a #${id} comment`;
-  }
+      if (!parent) {
+        throw new NotFoundException('부모 댓글이 존재하지 않습니다.');
+      }
 
-  remove(id: number) {
-    return `This action removes a #${id} comment`;
+      if (parent.isDeleted) {
+        throw new BadRequestException('삭제된 댓글에는 답글을 작성할 수 없습니다.');
+      }
+
+      if (parent.post.id !== post.id) {
+        throw new BadRequestException('부모 댓글과 게시물이 일치하지 않습니다.');
+      }
+    }
+
+    const newComment = this.commentRepository.create({
+      content,
+      post,
+      author,
+      parent,
+      isDeleted: false,
+    });
+
+    await this.commentRepository.save(newComment);
+
+    return { message: '댓글이 등록되었습니다.' };
   }
 }

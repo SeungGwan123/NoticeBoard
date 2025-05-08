@@ -24,7 +24,7 @@ export class File {
   @Column({ nullable: true })
   size: number;
 
-  @ManyToOne(() => Post, (post) => post.files)
+  @ManyToOne(() => Post, (post) => post.files, { onDelete: 'CASCADE' })
   post: Post;
 
   @CreateDateColumn()

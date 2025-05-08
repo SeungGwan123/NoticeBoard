@@ -44,6 +44,6 @@ export class Post {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @Column()
+  @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
 }

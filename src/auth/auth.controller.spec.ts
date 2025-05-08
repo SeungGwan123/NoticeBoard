@@ -236,11 +236,16 @@ describe('AuthController POST login', () => {
   });
 
   it('🧪 DB에 refreshToken 저장 확인', async () => {
-    const user = await dataSource.getRepository(User).findOneBy({
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: validUser.email, password: validUser.password })
+      .expect(200);
+
+    const user = await dataSource.getRepository(User).findOneByOrFail({
       email: validUser.email,
     });
 
-    expect(user?.refreshToken).toBeDefined();
+    expect(user.refreshToken).toBeDefined();
   });
 });
 

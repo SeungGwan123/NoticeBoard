@@ -11,8 +11,8 @@ import { Post } from '../../post/entities/post.entity';
 
 @Entity()
 export class Comment {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  id: number;
 
   @Column('text')
   content: string;
@@ -32,6 +32,6 @@ export class Comment {
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column()
+  @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
 }
