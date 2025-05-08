@@ -10,6 +10,7 @@ import { Comment } from '../comment/entities/comment.entity';
 import { Like } from '../like/entities/like.entity';
 import { File } from '../file/entities/file.entity';
 import { InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 
 describe('UserService getMe', () => {
   let userService: UserService;
@@ -183,5 +184,75 @@ describe('UserService updateMe', () => {
     ).rejects.toThrow(InternalServerErrorException);
 
     spy.mockRestore();
+  });
+});
+
+describe('UserService getUser', () => {
+  let userService: UserService;
+  let userRepository: Repository<User>;
+  let dataSource: DataSource;
+  let user: User;
+
+  const testUser = {
+    email: `get-user-service-${Date.now()}@example.com`,
+    password: 'password123',
+    name: '서비스사용자',
+    nickname: '서비스닉',
+  };
+
+  beforeAll(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        TypeOrmModule.forFeature([User]),
+      ],
+      providers: [UserService],
+    }).compile();
+
+    userService = module.get(UserService);
+    dataSource = module.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    user = userRepository.create(testUser);
+    await userRepository.save(user);
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ id: user.id });
+    await dataSource.destroy();
+  });
+
+  it('✅ 존재하는 유저 ID → name, nickname 반환', async () => {
+    const result = await userService.getUser(user.id);
+
+    expect(result).toEqual({
+      name: testUser.name,
+      nickname: testUser.nickname,
+    });
+  });
+
+  it('❌ 삭제된 유저 → UnauthorizedException', async () => {
+    await userRepository.update(user.id, { isDeleted: true });
+
+    await expect(userService.getUser(user.id)).rejects.toThrow(UnauthorizedException);
+
+    await userRepository.update(user.id, { isDeleted: false }); // 원복
+  });
+
+  it('❌ 존재하지 않는 UUID → UnauthorizedException', async () => {
+    const nonExistentId = uuidv4();
+
+    await expect(userService.getUser(nonExistentId)).rejects.toThrow(UnauthorizedException);
   });
 });

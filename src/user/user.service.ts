@@ -45,4 +45,15 @@ export class UserService {
 
     return { message: '사용자 정보가 수정되었습니다.' };
   }
+
+  async getUser(userId: string): Promise<{ name: string; nickname: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+    }
+    return {
+      name: user.name,
+      nickname: user.nickname,
+    };
+  }
 }

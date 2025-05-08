@@ -13,6 +13,7 @@ import { AuthModule } from '../auth/auth.module';
 import { UserModule } from './user.module';
 import * as jwt from 'jsonwebtoken';
 import { JwtService } from '@nestjs/jwt';
+import { v4 as uuidv4 } from 'uuid';
 
 describe('UserController GET me', () => {
   let app: INestApplication;
@@ -227,5 +228,132 @@ describe('UserController PATCH /me', () => {
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
 
     await userRepository.update(user.id, { isDeleted: false }); // 원복
+  });
+});
+
+describe('UserController GET /:userId', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let viewerUser: User;
+  let targetUser: User;
+  let accessToken: string;
+
+  const now = Date.now();
+
+  const viewerSignup = {
+    email: `viewer-${now}@example.com`,
+    password: 'pw1234pw1234',
+    name: '조회자',
+    nickname: '조회자닉',
+  };
+
+  const targetSignup = {
+    email: `target-${now}@example.com`,
+    password: 'pw1234pw1234',
+    name: '대상자',
+    nickname: '대상자닉',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        AuthModule,
+        UserModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send(viewerSignup)
+      .expect(201);
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: viewerSignup.email, password: viewerSignup.password })
+      .expect(200);
+
+    accessToken = loginRes.body.accessToken;
+
+    viewerUser = await userRepository.findOneByOrFail({ email: viewerSignup.email });
+    if (!viewerUser) throw new Error('viewerUser가 DB에 저장되지 않았습니다.');
+
+    // targetUser 회원가입
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send(targetSignup)
+      .expect(201);
+
+    targetUser = await userRepository.findOneByOrFail({ email: targetSignup.email });
+    if (!targetUser) throw new Error('targetUser가 DB에 저장되지 않았습니다.');
+  });
+
+  afterAll(async () => {
+    if (viewerUser?.id) await userRepository.delete({ id: viewerUser.id });
+    if (targetUser?.id) await userRepository.delete({ id: targetUser.id });
+    await app.close();
+  });
+
+  it('✅ 타인의 유저 ID → name, nickname 반환', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/user/${targetUser.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body).toMatchObject({
+      name: targetSignup.name,
+      nickname: targetSignup.nickname,
+    });
+  });
+
+  it('❌ 삭제된 유저 → 401 Unauthorized', async () => {
+    await userRepository.update(targetUser.id, { isDeleted: true });
+
+    const res = await request(app.getHttpServer())
+      .get(`/user/${targetUser.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+
+    expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
+
+    await userRepository.update(targetUser.id, { isDeleted: false }); // 원복
+  });
+
+  it('❌ 존재하지 않는 UUID → 401 Unauthorized', async () => {
+    const nonExistentId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+    const res = await request(app.getHttpServer())
+      .get(`/user/${nonExistentId}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+
+    expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
+  });
+
+  it('❌ 토큰 없이 요청 → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/user/${targetUser.id}`)
+      .expect(401);
+
+    expect(res.body.message).toBe('Access Token이 존재하지 않습니다.');
   });
 });

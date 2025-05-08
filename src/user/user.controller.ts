@@ -33,4 +33,11 @@ export class UserController {
     const userId = req['user'].id;
     return this.userService.updateMe(userId, updateUserDto);
   }
+
+  @Get(':id')
+  getUser(
+    @Param('id') id: string,
+  ): Promise<{ name: string; nickname: string }> {
+    return this.userService.getUser(id);
+  }
 }
