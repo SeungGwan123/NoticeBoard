@@ -501,6 +501,168 @@ describe('PostController GET /post/:postId', () => {
   });
 });
 
+describe('PostController DELETE /post/:postId', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let postRepository: Repository<Post>;
+  let accessToken: string;
+  let user: User;
+
+  const testUser = {
+    email: `delete-e2e-${Date.now()}@example.com`,
+    password: 'password1234',
+    name: '유저',
+    nickname: '작성자',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, PostStats, File, Like, Comment],
+        }),
+        TypeOrmModule.forFeature([User, Post, File, PostStats, Like, Comment]),
+        AuthModule,
+        PostModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+    postRepository = dataSource.getRepository(Post);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = res.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+  });
+
+  afterAll(async () => {
+    const postRepository = dataSource.getRepository(Post);
+    await postRepository.delete({ author: { id: user.id } });
+    await userRepository.delete({ email: testUser.email });
+    await app.close();
+  });
+
+  it('✅ 정상 삭제', async () => {
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: user,
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200)
+      .expect({ message: '게시글이 삭제되었습니다.' });
+    
+    const deletedPost = await postRepository.findOneByOrFail({ id: post.id });
+    expect(deletedPost.isDeleted).toBe(true);
+  });
+
+  it('❌ 작성자가 아닌 경우 삭제 불가', async () => {
+    const otherUser = await userRepository.save({
+      email: `other-${Date.now()}@example.com`,
+      password: 'password1234',
+      name: '다른 유저',
+      nickname: '작성자2',
+    });
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: otherUser,
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+      
+    await postRepository.delete({ id: post.id });
+    await userRepository.delete({ email: otherUser.email });
+  });
+
+  it('❌ 게시글이 존재하지 않으면 404 반환', async () => {
+    await request(app.getHttpServer())
+      .delete('/post/999999999')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(404);
+  });
+
+  it('❌ 이미 삭제된 게시글에 대해서 404 반환', async () => {
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: user,
+      isDeleted: true,
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(404);
+  });
+
+  it('❌ accessToken 없음', async () => {
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: user,
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/post/${post.id}`)
+      .expect(401);
+  });
+
+  it('❌ 잘못된 accessToken', async () => {
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: user,
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/post/${post.id}`)
+      .set('Authorization', 'Bearer invalid.token.here')
+      .expect(401);
+  });
+
+  it('❌ 삭제된 유저', async () => {
+    await userRepository.update(user.id, { isDeleted: true });
+
+    const post = await postRepository.save({
+      title: '삭제된 유저 게시글',
+      content: '본문입니다.',
+      author: user,
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/post/${post.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+    await userRepository.update(user.id, { isDeleted: false });
+  });
+});
+
 describe('PostController PATCH /post/:postId', () => {
   let app: INestApplication;
   let dataSource: DataSource;

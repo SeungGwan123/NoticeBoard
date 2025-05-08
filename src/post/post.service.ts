@@ -6,6 +6,7 @@ import {
   NotFoundException,
   InternalServerErrorException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Post } from './entities/post.entity';
 import { User } from '../user/entities/user.entity';
@@ -211,5 +212,27 @@ export class PostService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async deletePost(userId: string, postId: number): Promise<void> {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['author'],
+    });
+
+    if (!post) {
+      throw new NotFoundException('게시글을 찾을 수 없습니다.');
+    }
+
+    if (post.author.id !== userId) {
+      throw new UnauthorizedException('자신의 게시글만 삭제할 수 있습니다.');
+    }
+
+    if (post.isDeleted) {
+      throw new NotFoundException('이미 삭제된 게시글입니다.');
+    }
+
+    post.isDeleted = true;
+    await this.postRepository.save(post);
   }
 }

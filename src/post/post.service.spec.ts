@@ -7,11 +7,14 @@ import { PostStats } from './entities/post-stats.entity';
 import { User } from '../user/entities/user.entity';
 import { File } from '../file/entities/file.entity';
 import { CreatePostDto } from './dto/create-post.dto';
-import { BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, INestApplication, InternalServerErrorException, NotFoundException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Like } from '../like/entities/like.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { FileDto } from '../file/dto/file.dto';
+import { AuthModule } from '../auth/auth.module';
+import { PostModule } from './post.module';
+import * as request from 'supertest';
 
 describe('PostService createPost', () => {
   let postService: PostService;
@@ -377,5 +380,123 @@ describe('PostService updatePost', () => {
 
     const res = await service.updatePost(user.id, post.id, dto(files));
     expect(res.message).toBe('게시글이 수정되었습니다.');
+  });
+});
+
+describe('PostService deletePost', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let postRepository: Repository<Post>;
+  let userRepository: Repository<User>;
+  let postService: PostService;
+  let user: User;
+  let accessToken: string;
+
+  const testUser = {
+    email: `delete-post-${Date.now()}@example.com`,
+    password: 'password1234',
+    name: '유저',
+    nickname: '작성자',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, PostStats, File, Like, Comment],
+        }),
+        TypeOrmModule.forFeature([User, Post, File, PostStats, Like, Comment]),
+        AuthModule,
+        PostModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    postRepository = dataSource.getRepository(Post);
+    userRepository = dataSource.getRepository(User);
+    postService = moduleFixture.get(PostService);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = res.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+  });
+
+  afterAll(async () => {
+    await postRepository.delete({ author: { id: user.id } });
+    await userRepository.delete({ email: testUser.email });
+    await app.close();
+  });
+
+  it('✅ 정상 삭제', async () => {
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: user,
+    });
+
+    await postService.deletePost(user.id, post.id);
+
+    const deletedPost = await postRepository.findOneOrFail({
+      where: { id: post.id },
+    });
+    expect(deletedPost.isDeleted).toBe(true);
+  });
+
+  it('❌ 게시글이 존재하지 않으면 404 반환', async () => {
+    await expect(postService.deletePost(user.id, 99999999)).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('❌ 작성자가 아닌 경우 401 반환', async () => {
+    const otherUser = await userRepository.save({
+      email: `other-${Date.now()}@example.com`,
+      password: 'password1234',
+      name: '다른 유저',
+      nickname: '작성자2',
+    });
+
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: otherUser,
+    });
+
+    await expect(
+      postService.deletePost(user.id, post.id),
+    ).rejects.toThrow(UnauthorizedException);
+
+    await postRepository.delete({ id: post.id });
+    await userRepository.delete({ email: otherUser.email });
+  });
+
+  it('❌ 이미 삭제된 게시글에 대해서 404 반환', async () => {
+    const post = await postRepository.save({
+      title: '제목',
+      content: '본문',
+      author: user,
+      isDeleted: true,
+    });
+
+    await expect(
+      postService.deletePost(user.id, post.id),
+    ).rejects.toThrow(NotFoundException);
   });
 });

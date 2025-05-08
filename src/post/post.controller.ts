@@ -46,4 +46,14 @@ export class PostController {
     const userId = req['user'].id;
     return this.postService.updatePost(userId, postId, updatePostDto);
   }
+
+  @Delete(':postId')
+  async deletePost(
+    @Req() req: Request,
+    @Param('postId', ParseIntPipe) postId: number,
+  ): Promise<{ message: string }> {
+    const userId = req['user'].id;
+    await this.postService.deletePost(userId, postId);
+    return { message: '게시글이 삭제되었습니다.' };
+  }
 }
