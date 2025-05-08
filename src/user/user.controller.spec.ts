@@ -12,6 +12,7 @@ import { File } from '../file/entities/file.entity';
 import { AuthModule } from '../auth/auth.module';
 import { UserModule } from './user.module';
 import * as jwt from 'jsonwebtoken';
+import { JwtService } from '@nestjs/jwt';
 
 describe('UserController GET me', () => {
   let app: INestApplication;
@@ -107,6 +108,120 @@ describe('UserController GET me', () => {
     const res = await request(app.getHttpServer())
       .get('/user/me')
       .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+
+    expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
+
+    await userRepository.update(user.id, { isDeleted: false }); // 원복
+  });
+});
+
+describe('UserController PATCH /me', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let accessToken: string;
+  let user: User;
+
+  const testUser = {
+    email: `patch-me-${Date.now()}@example.com`,
+    password: 'password123',
+    name: '기존이름',
+    nickname: '기존닉네임',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        AuthModule,
+        UserModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = res.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ email: testUser.email });
+    await app.close();
+  });
+
+  it('✅ 유효한 accessToken과 변경 정보 → 200 + 성공 메시지', async () => {
+    const res = await request(app.getHttpServer())
+      .patch('/user/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: '수정이름', nickname: '수정닉네임' })
+      .expect(200);
+
+    expect(res.body).toEqual({ message: '사용자 정보가 수정되었습니다.' });
+
+    const updated = await userRepository.findOneByOrFail({ id: user.id });
+    expect(updated.name).toBe('수정이름');
+    expect(updated.nickname).toBe('수정닉네임');
+  });
+
+  it('❕ 동일한 정보 → 200 + "변경 사항이 없습니다."', async () => {
+    const res = await request(app.getHttpServer())
+      .patch('/user/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: '수정이름', nickname: '수정닉네임' })
+      .expect(200);
+
+    expect(res.body).toEqual({ message: '변경 사항이 없습니다.' });
+  });
+
+  it('❌ accessToken 없음 → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .patch('/user/me')
+      .send({ name: 'abc', nickname: 'def' })
+      .expect(401);
+
+    expect(res.body.message).toBe('Access Token이 존재하지 않습니다.');
+  });
+
+  it('❌ 잘못된 accessToken → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .patch('/user/me')
+      .set('Authorization', 'Bearer invalid.token.here')
+      .send({ name: 'abc', nickname: 'def' })
+      .expect(401);
+
+    expect(res.body.message).toBe('유효하지 않은 Access Token입니다.');
+  });
+
+  it('❌ 삭제된 유저 → 401 Unauthorized', async () => {
+    await userRepository.update(user.id, { isDeleted: true });
+
+    const res = await request(app.getHttpServer())
+      .patch('/user/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: '누구', nickname: '없음' })
       .expect(401);
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');

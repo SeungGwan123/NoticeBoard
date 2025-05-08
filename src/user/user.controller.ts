@@ -24,4 +24,13 @@ export class UserController {
     const userId = req['user'].id;
     return this.userService.getMe(userId);
   }
+
+  @Patch('me')
+  updateMe(
+    @Req() req: Request,
+    @Body() updateUserDto: { name: string; nickname: string },
+  ): Promise<{ message: string }> {
+    const userId = req['user'].id;
+    return this.userService.updateMe(userId, updateUserDto);
+  }
 }
