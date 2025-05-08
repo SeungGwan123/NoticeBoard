@@ -10,6 +10,7 @@ import { Comment } from '../comment/entities/comment.entity';
 import { File } from '../file/entities/file.entity';
 import { Like } from '../like/entities/like.entity';
 import { NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { PostStats } from '../post/entities/post-stats.entity';
 
 describe('CommentService create', () => {
   let commentService: CommentService;
@@ -40,9 +41,9 @@ describe('CommentService create', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, File, Like],
+          entities: [User, Post, Comment, File, Like, PostStats],
         }),
-        TypeOrmModule.forFeature([Comment, Post, User]),
+        TypeOrmModule.forFeature([Comment, Post, User, PostStats]),
       ],
       providers: [CommentService],
     }).compile();
@@ -185,9 +186,9 @@ describe('CommentService delete', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, File, Like],
+          entities: [User, Post, Comment, File, Like, PostStats],
         }),
-        TypeOrmModule.forFeature([Comment, Post, User]),
+        TypeOrmModule.forFeature([Comment, Post, User, PostStats]),
       ],
       providers: [CommentService],
     }).compile();

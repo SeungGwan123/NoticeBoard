@@ -6,6 +6,7 @@ import {
   OneToMany,
   CreateDateColumn,
   Index,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Post } from '../../post/entities/post.entity';
@@ -25,8 +26,9 @@ export class Comment {
   @ManyToOne(() => Post, (post) => post.comments)
   post: Post;
 
-  @ManyToOne(() => Comment, (comment) => comment.children)
-  parent: Comment;
+  @ManyToOne(() => Comment, { nullable: true })
+  @JoinColumn()
+  parent?: Comment;
 
   @OneToMany(() => Comment, (comment) => comment.parent)
   children: Comment[];
