@@ -9,7 +9,7 @@ import { Post } from '../post/entities/post.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { File } from '../file/entities/file.entity';
 import { Like } from '../like/entities/like.entity';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 
 describe('CommentService create', () => {
   let commentService: CommentService;
@@ -160,5 +160,136 @@ describe('CommentService create', () => {
         authorId: user.id,
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('CommentService delete', () => {
+  let commentService: CommentService;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let postRepository: Repository<Post>;
+  let commentRepository: Repository<Comment>;
+  let user: User;
+  let post: Post;
+
+  beforeAll(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, File, Like],
+        }),
+        TypeOrmModule.forFeature([Comment, Post, User]),
+      ],
+      providers: [CommentService],
+    }).compile();
+
+    commentService = module.get(CommentService);
+    dataSource = module.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+    postRepository = dataSource.getRepository(Post);
+    commentRepository = dataSource.getRepository(Comment);
+
+    user = await userRepository.save({
+      email: `deltest-${Date.now()}@example.com`,
+      password: 'password',
+      name: '삭제유저',
+      nickname: '삭제러',
+      isDeleted: false,
+    });
+
+    post = await postRepository.save({
+      title: '삭제용 게시글',
+      content: '삭제 테스트',
+      author: user,
+      isDeleted: false,
+    });
+  });
+
+  afterAll(async () => {
+    await commentRepository.delete({});
+    await postRepository.delete({});
+    await userRepository.delete({});
+    await dataSource.destroy();
+  });
+
+  it('✅ 댓글 정상 삭제', async () => {
+    const comment = await commentRepository.save({
+      content: '삭제될 댓글',
+      post,
+      author: user,
+      isDeleted: false,
+    });
+
+    const res = await commentService.delete(comment.id, user.id);
+    expect(res.message).toBe('댓글이 삭제되었습니다.');
+
+    const deleted = await commentRepository.findOneBy({ id: comment.id });
+    expect(deleted?.isDeleted).toBe(true);
+  });
+
+  it('❌ 존재하지 않는 댓글', async () => {
+    await expect(
+      commentService.delete(999999, user.id),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('❌ 이미 삭제된 댓글', async () => {
+    const deleted = await commentRepository.save({
+      content: '이미 삭제된 댓글',
+      post,
+      author: user,
+      isDeleted: true,
+    });
+
+    await expect(
+      commentService.delete(deleted.id, user.id),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('❌ 탈퇴한 사용자가 삭제 시도 → 예외 발생', async () => {
+    await userRepository.update({ id: user.id }, { isDeleted: true });
+
+    const comment = await commentRepository.save({
+      content: '탈퇴 유저 댓글',
+      post,
+      author: user,
+      isDeleted: false,
+    });
+
+    await expect(
+      commentService.delete(comment.id, user.id),
+    ).rejects.toThrow(UnauthorizedException);
+
+    await userRepository.update({ id: user.id }, { isDeleted: false });
+  });
+
+  it('❌ 다른 사용자의 댓글 삭제 시도', async () => {
+    const otherUser = await userRepository.save({
+      email: `other-${Date.now()}@test.com`,
+      password: 'password',
+      name: '다른사람',
+      nickname: '비삭제러',
+      isDeleted: false,
+    });
+
+    const comment = await commentRepository.save({
+      content: '남의 댓글',
+      post,
+      author: otherUser,
+      isDeleted: false,
+    });
+
+    await expect(
+      commentService.delete(comment.id, user.id),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

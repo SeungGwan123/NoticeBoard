@@ -17,4 +17,13 @@ export class CommentController {
     const userId = req['user'].id;
     return this.commentService.create({ ...dto, authorId: userId });
   }
+
+  @Delete(':commentId')
+  deleteComment(
+    @Param('commentId') commentId: number,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    const userId = req['user'].id;
+    return this.commentService.delete(commentId, userId);
+  }
 }

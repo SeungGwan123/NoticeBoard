@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -75,5 +77,31 @@ export class CommentService {
     await this.commentRepository.save(newComment);
 
     return { message: '댓글이 등록되었습니다.' };
+  }
+
+  async delete(commentId: number, userId: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+    }
+    const comment = await this.commentRepository.findOne({
+      where: { id: commentId },
+      relations: ['author'],
+    });
+
+    if (!comment || comment.isDeleted) {
+      throw new NotFoundException('댓글이 존재하지 않습니다.');
+    }
+
+    if (comment.author.id !== userId) {
+      throw new ForbiddenException('삭제 권한이 없습니다.');
+    }
+
+    const result = await this.commentRepository.update(commentId, { isDeleted: true });
+    if (result.affected === 0) {
+      throw new InternalServerErrorException('댓글 삭제에 실패했습니다.');
+    }
+
+    return { message: '댓글이 삭제되었습니다.' };
   }
 }
