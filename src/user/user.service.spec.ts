@@ -38,7 +38,7 @@ describe('UserService getMe', () => {
           synchronize: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User, Post]),
+        TypeOrmModule.forFeature([User, Post, Comment]),
       ],
       providers: [UserService],
     }).compile();
@@ -110,7 +110,7 @@ describe('UserService updateMe', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User, Post]),
+        TypeOrmModule.forFeature([User, Post, Comment]),
       ],
       providers: [UserService],
     }).compile();
@@ -119,7 +119,6 @@ describe('UserService updateMe', () => {
     dataSource = module.get(DataSource);
     userRepository = dataSource.getRepository(User);
 
-    // 테스트 유저 생성
     user = userRepository.create(testUser);
     await userRepository.save(user);
   });
@@ -161,7 +160,7 @@ describe('UserService updateMe', () => {
       }),
     ).rejects.toThrow(UnauthorizedException);
 
-    await userRepository.update(user.id, { isDeleted: false }); // 원복
+    await userRepository.update(user.id, { isDeleted: false });
   });
 
   it('❌ 존재하지 않는 유저 → UnauthorizedException', async () => {
@@ -215,7 +214,7 @@ describe('UserService getUser', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User, Post]),
+        TypeOrmModule.forFeature([User, Post, Comment]),
       ],
       providers: [UserService],
     }).compile();
@@ -247,7 +246,7 @@ describe('UserService getUser', () => {
 
     await expect(userService.getUser(user.id)).rejects.toThrow(UnauthorizedException);
 
-    await userRepository.update(user.id, { isDeleted: false }); // 원복
+    await userRepository.update(user.id, { isDeleted: false });
   });
 
   it('❌ 존재하지 않는 UUID → UnauthorizedException', async () => {
@@ -285,7 +284,7 @@ describe('UserService deleteMe', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User, Post]),
+        TypeOrmModule.forFeature([User, Post, Comment]),
       ],
       providers: [UserService],
     }).compile();
@@ -361,7 +360,7 @@ describe('UserService getMyPosts', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User, Post]),
+        TypeOrmModule.forFeature([User, Post, Comment]),
       ],
       providers: [UserService],
     }).compile();
@@ -371,7 +370,6 @@ describe('UserService getMyPosts', () => {
     userRepository = dataSource.getRepository(User);
     postRepository = dataSource.getRepository(Post);
 
-    // 테스트 유저 생성
     user = await userRepository.save({
       email: `myposts-${Date.now()}@test.com`,
       password: '12345678',
@@ -379,7 +377,6 @@ describe('UserService getMyPosts', () => {
       nickname: '게시유저',
     });
 
-    // 게시물 15개 생성
     const posts = Array.from({ length: 15 }, (_, i) =>
       postRepository.create({
         title: `테스트 ${i + 1}`,
@@ -437,12 +434,142 @@ describe('UserService getMyPosts', () => {
 
     await expect(userService.getMyPosts(user.id)).rejects.toThrow('존재하지 않는 사용자입니다.');
 
-    await userRepository.update({ id: user.id }, { isDeleted: false }); // 원복
+    await userRepository.update({ id: user.id }, { isDeleted: false });
   });
 
   it('❌ 존재하지 않는 유저 → UnauthorizedException', async () => {
     await expect(
       userService.getMyPosts('11111111-1111-1111-1111-111111111111'),
     ).rejects.toThrow('존재하지 않는 사용자입니다.');
+  });
+});
+
+describe('UserService getMyComments', () => {
+  let userService: UserService;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let postRepository: Repository<Post>;
+  let commentRepository: Repository<Comment>;
+  let user: User;
+  let post: Post;
+
+  beforeAll(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        TypeOrmModule.forFeature([User, Post, Comment]),
+      ],
+      providers: [UserService],
+    }).compile();
+
+    userService = module.get(UserService);
+    dataSource = module.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+    postRepository = dataSource.getRepository(Post);
+    commentRepository = dataSource.getRepository(Comment);
+
+    user = await userRepository.save({
+      email: `svc-comment-${Date.now()}@test.com`,
+      password: 'test1234',
+      name: '서비스테스트',
+      nickname: 'svc',
+      isDeleted: false,
+    });
+
+    post = await postRepository.save({
+      title: '댓글 테스트용 게시글',
+      content: '본문입니다',
+      author: user,
+      isDeleted: false,
+    });
+
+    const comments = Array.from({ length: 12 }, (_, i) =>
+      commentRepository.create({
+        content: `코멘트 ${i + 1}`,
+        post,
+        author: user,
+        isDeleted: false,
+      }),
+    );
+    await commentRepository.save(comments);
+  });
+
+  afterAll(async () => {
+    await commentRepository.delete({});
+    await postRepository.delete({});
+    await userRepository.delete({ id: user.id });
+    await dataSource.destroy();
+  });
+
+  it('✅ 최신 댓글 10개를 반환한다', async () => {
+    const res = await userService.getMyComments(user.id);
+
+    expect(res.comments).toHaveLength(10);
+    expect(res.comments[0].content).toBe('코멘트 11');
+    expect(res.comments[9].content).toBe('코멘트 2');
+  });
+
+  it('✅ cursor를 이용해 이전 댓글을 조회한다', async () => {
+    const cursor = (
+      await commentRepository.findOneByOrFail({ content: '코멘트 3' })
+    ).id;
+
+    const res = await userService.getMyComments(user.id, cursor);
+
+    expect(res.comments).toHaveLength(2);
+    expect(res.comments[0].content).toBe('코멘트 2');
+    expect(res.comments[1].content).toBe('코멘트 1');
+  });
+
+  it('❕ cursor가 삭제된 댓글일 경우 → 최신 댓글 반환', async () => {
+    const deleted = await commentRepository.save({
+      content: '삭제된 커서',
+      post,
+      author: user,
+      isDeleted: true,
+    });
+
+    const result = await userService.getMyComments(user.id, deleted.id);
+
+    expect(result.comments[0].content).toBe('코멘트 11');
+  });
+
+  it('❕ 존재하지 않는 cursor일 경우 → 최신 댓글 반환', async () => {
+    const result = await userService.getMyComments(user.id, 999999);
+    expect(result.comments[0].content).toBe('코멘트 11');
+  });
+
+  it('❌ 삭제된 유저는 예외 발생', async () => {
+    await userRepository.update({ id: user.id }, { isDeleted: true });
+
+    await expect(userService.getMyComments(user.id)).rejects.toThrow(UnauthorizedException);
+
+    await userRepository.update({ id: user.id }, { isDeleted: false });
+  });
+
+  it('❕ 댓글이 하나도 없으면 빈 배열을 반환한다', async () => {
+    const noCommentUser = await userRepository.save({
+      email: `nocomment-${Date.now()}@test.com`,
+      password: 'pass1234',
+      name: '무댓글',
+      nickname: '비어있음',
+      isDeleted: false,
+    });
+
+    const result = await userService.getMyComments(noCommentUser.id);
+    expect(result.comments).toHaveLength(0);
+
+    await userRepository.delete({ id: noCommentUser.id });
   });
 });

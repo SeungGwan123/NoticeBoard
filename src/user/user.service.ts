@@ -3,6 +3,7 @@ import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Post } from '../post/entities/post.entity';
+import { Comment } from '../comment/entities/comment.entity';
 
 @Injectable()
 export class UserService {
@@ -12,6 +13,9 @@ export class UserService {
 
     @InjectRepository(Post)
     private readonly postRepository: Repository<Post>,
+
+    @InjectRepository(Comment)
+    private readonly commentRepository: Repository<Comment>,
   ) {}
 
   async getMe(userId: string): Promise<{ email: string; name: string; nickname: string }> {
@@ -126,6 +130,63 @@ export class UserService {
       posts: posts.map((post) => ({
         id: Number(post.id),
         title: post.title,
+      })),
+    };
+  }
+
+  async getMyComments(
+    userId: string,
+    lastCommentId?: number,
+  ): Promise<{ comments: { id: number; content: string }[] }> {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+    }
+
+    let effectiveLastCommentId: number | null = null;
+
+    if (lastCommentId) {
+      const isValid = await this.commentRepository
+        .createQueryBuilder('comment')
+        .where('comment.authorId = :userId', { userId })
+        .andWhere('comment.isDeleted = false')
+        .andWhere('comment.id = :lastCommentId', { lastCommentId })
+        .getCount();
+
+      if (isValid > 0) {
+        effectiveLastCommentId = lastCommentId;
+      }
+    }
+
+    if (!effectiveLastCommentId) {
+      const maxComment = await this.commentRepository
+        .createQueryBuilder('comment')
+        .select('MAX(comment.id)', 'max')
+        .where('comment.authorId = :userId', { userId })
+        .andWhere('comment.isDeleted = false')
+        .getRawOne();
+
+      if (!maxComment?.max) {
+        return { comments: [] };
+      }
+
+      effectiveLastCommentId = maxComment.max;
+    }
+
+    const comments = await this.commentRepository
+      .createQueryBuilder('comment')
+      .select(['comment.id AS id', 'comment.content AS content'])
+      .where('comment.authorId = :userId', { userId })
+      .andWhere('comment.isDeleted = false')
+      .andWhere('comment.id < :lastCommentId', { lastCommentId: effectiveLastCommentId })
+      .orderBy('comment.id', 'DESC')
+      .limit(10)
+      .getRawMany<{ id: number; content: string }>();
+
+    return {
+      comments: comments.map((comment) => ({
+        id: Number(comment.id),
+        content: comment.content,
       })),
     };
   }

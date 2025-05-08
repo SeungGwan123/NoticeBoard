@@ -290,7 +290,6 @@ describe('AuthController POST logout', () => {
     dataSource = moduleFixture.get(DataSource);
     userRepository = dataSource.getRepository(User);
 
-    // 회원가입 및 로그인
     await request(app.getHttpServer()).post('/auth/signup').send(testUser);
     const res = await request(app.getHttpServer()).post('/auth/login').send({
       email: testUser.email,
@@ -460,7 +459,7 @@ describe('AuthController POST refresh-token', () => {
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
 
-    await dataSource.getRepository(User).update(user.id, { isDeleted: false }); // 복구
+    await dataSource.getRepository(User).update(user.id, { isDeleted: false });
   });
 
   it('❌ refreshToken이 DB와 일치하지 않음 → 401', async () => {

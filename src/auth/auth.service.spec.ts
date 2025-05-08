@@ -75,12 +75,10 @@ describe('AuthService signup', () => {
   });
 
   it('✅ soft-delete 복구 (isDeleted: true)', async () => {
-    // 삭제된 사용자로 만들기
     const user = await userRepository.findOneByOrFail({ email: dto.email });
     user.isDeleted = true;
     await userRepository.save(user);
 
-    // 다시 가입 시 복구
     const result = await service.signUp(dto);
     expect(result.message).toBe('회원가입이 성공적으로 진행되었습니다');
 
@@ -171,7 +169,7 @@ describe('AuthService login', () => {
         authService.login({ email: validUser.email, password: validUser.password }),
       ).rejects.toThrow('이메일이 일치하지 않습니다.');
 
-      user.isDeleted = false; // 테스트 후 복구
+      user.isDeleted = false;
       await userRepository.save(user);
     }
   });
@@ -293,7 +291,6 @@ describe('AuthService reissueToken', () => {
     dataSource = moduleFixture.get(DataSource);
     userRepository = dataSource.getRepository(User);
 
-    // 유저 등록 + 로그인
     const timestamp = Date.now();
     const email = `reissue-${timestamp}@example.com`;
     const password = 'password123';

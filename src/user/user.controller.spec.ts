@@ -56,10 +56,8 @@ describe('UserController GET me', () => {
     dataSource = moduleFixture.get(DataSource);
     userRepository = dataSource.getRepository(User);
 
-    // 회원가입
     await request(app.getHttpServer()).post('/auth/signup').send(testUser);
 
-    // 로그인 후 accessToken 획득
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: testUser.email, password: testUser.password });
@@ -113,7 +111,7 @@ describe('UserController GET me', () => {
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
 
-    await userRepository.update(user.id, { isDeleted: false }); // 원복
+    await userRepository.update(user.id, { isDeleted: false });
   });
 });
 
@@ -227,7 +225,7 @@ describe('UserController PATCH me', () => {
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
 
-    await userRepository.update(user.id, { isDeleted: false }); // 원복
+    await userRepository.update(user.id, { isDeleted: false });
   });
 });
 
@@ -297,7 +295,6 @@ describe('UserController GET :userId', () => {
     viewerUser = await userRepository.findOneByOrFail({ email: viewerSignup.email });
     if (!viewerUser) throw new Error('viewerUser가 DB에 저장되지 않았습니다.');
 
-    // targetUser 회원가입
     await request(app.getHttpServer())
       .post('/auth/signup')
       .send(targetSignup)
@@ -335,7 +332,7 @@ describe('UserController GET :userId', () => {
 
     expect(res.body.message).toBe('존재하지 않는 사용자입니다.');
 
-    await userRepository.update(targetUser.id, { isDeleted: false }); // 원복
+    await userRepository.update(targetUser.id, { isDeleted: false });
   });
 
   it('❌ 존재하지 않는 UUID → 401 Unauthorized', async () => {
@@ -596,6 +593,223 @@ describe('UserController GET me/posts', () => {
       .expect(200);
 
     expect(res.body.posts).toHaveLength(0);
+
+    const user = await userRepository.findOneByOrFail({ email });
+    await userRepository.delete({ id: user.id });
+  });
+});
+
+describe('UserController GET /user/me/comments', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let commentRepository: Repository<Comment>;
+  let postRepository: Repository<Post>;
+  let user: User;
+  let accessToken: string;
+  let post: Post;
+
+  const testUser = {
+    email: `comments-test-${Date.now()}@example.com`,
+    password: 'testpassword123',
+    name: '댓글테스트',
+    nickname: '테스터',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        TypeOrmModule.forFeature([User, Post, Comment, Like, File]),
+        AuthModule,
+        UserModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+    postRepository = dataSource.getRepository(Post);
+    commentRepository = dataSource.getRepository(Comment);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = loginRes.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+
+    post = await postRepository.save({
+      title: '댓글용 게시글',
+      content: '댓글 테스트용입니다.',
+      author: user,
+      isDeleted: false,
+    });
+
+    const comments = Array.from({ length: 15 }, (_, i) =>
+      commentRepository.create({
+        content: `댓글 ${i + 1}`,
+        post,
+        author: user,
+        isDeleted: false,
+      }),
+    );
+    await commentRepository.save(comments);
+  });
+
+  afterAll(async () => {
+    await commentRepository.delete({});
+    await postRepository.delete({});
+    await userRepository.delete({ id: user.id });
+    await app.close();
+  });
+
+  it('✅ 댓글 15개 등록 후 /user/me/comments 요청 → 최신순 10개 반환', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/user/me/comments')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.comments).toHaveLength(10);
+    expect(res.body.comments[0].content).toBe('댓글 14');
+    expect(res.body.comments[9].content).toBe('댓글 5');
+  });
+
+  it('✅ cursor 파라미터를 통해 이전 5개 조회', async () => {
+    const cursor = (
+      await commentRepository.findOneByOrFail({ content: '댓글 6' })
+    ).id;
+
+    const res = await request(app.getHttpServer())
+      .get(`/user/me/comments?cursor=${cursor}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.comments).toHaveLength(5);
+    expect(res.body.comments[0].content).toBe('댓글 5');
+    expect(res.body.comments[4].content).toBe('댓글 1');
+  });
+
+  it('❌ 토큰 없이 요청 → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/user/me/comments')
+      .expect(401);
+
+    expect(res.body.message).toContain('Access Token이 존재하지 않습니다.');
+  });
+
+  it('❌ 다른 사용자의 댓글 ID를 cursor로 넘기면 → 무시하고 최신 댓글 반환', async () => {
+    const otherUser = await userRepository.save({
+      email: `other-${Date.now()}@test.com`,
+      password: 'pass1234',
+      name: '다른유저',
+      nickname: '다유',
+      isDeleted: false,
+    });
+
+    const otherPost = await postRepository.save({
+      title: '다른 유저 글',
+      content: '다른 글 내용',
+      author: otherUser,
+      isDeleted: false,
+    });
+
+    const otherComment = await commentRepository.save({
+      content: '타 유저 댓글',
+      author: otherUser,
+      post: otherPost,
+      isDeleted: false,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/user/me/comments?cursor=${otherComment.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.comments).toHaveLength(10);
+    expect(res.body.comments[0].content).toBe('댓글 14');
+  });
+
+  it('❕ cursor로 지정된 댓글이 삭제된 경우 → 무시하고 최신 댓글 반환', async () => {
+    const deleted = await commentRepository.save({
+      content: '삭제된 커서',
+      author: user,
+      post,
+      isDeleted: true,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/user/me/comments?cursor=${deleted.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.comments[0].content).toBe('댓글 14');
+  });
+
+  it('❌ 삭제된 유저 → 401 Unauthorized', async () => {
+    await userRepository.update({ id: user.id }, { isDeleted: true });
+
+    const res = await request(app.getHttpServer())
+      .get('/user/me/comments')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+
+    expect(res.body.message).toContain('존재하지 않는 사용자입니다.');
+
+    await userRepository.update({ id: user.id }, { isDeleted: false });
+  });
+
+  it('❕ 존재하지 않는 cursor → 최신 댓글 반환', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/user/me/comments?cursor=999999`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.comments).toHaveLength(10);
+    expect(res.body.comments[0].id).toBeGreaterThan(res.body.comments[9].id);
+  });
+
+  it('❕ 댓글이 없는 사용자 → 빈 배열 반환', async () => {
+    const email = `no-comment-${Date.now()}@test.com`;
+
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({
+        email,
+        password: '12345678',
+        name: '노댓글',
+        nickname: '비어있음',
+      })
+      .expect(201);
+
+    const token = (
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: '12345678' })
+        .expect(200)
+    ).body.accessToken;
+
+    const res = await request(app.getHttpServer())
+      .get('/user/me/comments')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(res.body.comments).toHaveLength(0);
 
     const user = await userRepository.findOneByOrFail({ email });
     await userRepository.delete({ id: user.id });

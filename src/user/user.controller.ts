@@ -56,4 +56,13 @@ export class UserController {
     const userId = req['user'].id;
     return this.userService.getMyPosts(userId, lastPostId);
   }
+
+  @Get('me/comments')
+  getMyComments(
+    @Req() req: Request,
+    @Query('cursor') lastCommentId?: number,
+  ): Promise<{ comments: { id: number; content: string }[] }> {
+    const userId = req['user'].id;
+    return this.userService.getMyComments(userId, lastCommentId);
+  }
 }

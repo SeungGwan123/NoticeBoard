@@ -13,8 +13,7 @@ export class File {
   id: string;
 
   @Column()
-  url: string; // S3 주소 등
-
+  url: string;
   @Column()
   originalName: string;
 

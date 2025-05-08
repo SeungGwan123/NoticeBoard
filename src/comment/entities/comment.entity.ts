@@ -5,10 +5,12 @@ import {
   ManyToOne,
   OneToMany,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Post } from '../../post/entities/post.entity';
 
+@Index('idx_author_content', ['author', 'isDeleted', 'id', 'content'])
 @Entity()
 export class Comment {
   @PrimaryGeneratedColumn('increment', { type: 'bigint' })
