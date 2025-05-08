@@ -387,6 +387,7 @@ describe('UserController DELETE me', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
+        TypeOrmModule.forFeature([User, Post, Comment, Like, File]),
         AuthModule,
         UserModule,
       ],
@@ -442,5 +443,161 @@ describe('UserController DELETE me', () => {
       .expect(401);
 
     expect(res.body.message).toBe('Access Token이 존재하지 않습니다.');
+  });
+});
+
+describe('UserController GET me/posts', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let postRepository: Repository<Post>;
+  let user: User;
+  let accessToken: string;
+
+  const testUser = {
+    email: `posts-test-${Date.now()}@example.com`,
+    password: 'testpassword123',
+    name: '게시물테스트',
+    nickname: '테스터',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        TypeOrmModule.forFeature([User, Post, Comment, Like, File]),
+        AuthModule,
+        UserModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+    postRepository = dataSource.getRepository(Post);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = loginRes.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+
+    const posts = Array.from({ length: 15 }, (_, i) =>
+        postRepository.create({
+            title: `테스트 게시물 ${i + 1}`,
+            author: user,
+            content: `테스트 게시물 ${i + 1}의 내용입니다.`,
+            isDeleted: false,
+        }),
+    );
+    await postRepository.save(posts);
+  });
+
+  afterAll(async () => {
+    await postRepository.delete({ author: { id: user.id } });
+    await userRepository.delete({ id: user.id });
+    await app.close();
+  });
+
+  it('✅ 게시물 15개 등록 후 /user/me/posts 요청 → 최신순 10개 반환', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/user/me/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.posts).toHaveLength(10);
+    expect(res.body.posts[0].title).toBe('테스트 게시물 14');
+    expect(res.body.posts[9].title).toBe('테스트 게시물 5');
+  });
+
+  it('✅ cursor 파라미터를 통해 이전 5개 조회', async () => {
+    const cursor = (await postRepository.findOneByOrFail({ title: '테스트 게시물 6' })).id;
+
+    const res = await request(app.getHttpServer())
+      .get(`/user/me/posts?cursor=${cursor}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.posts).toHaveLength(5);
+    expect(res.body.posts[0].title).toBe('테스트 게시물 5');
+    expect(res.body.posts[4].title).toBe('테스트 게시물 1');
+  });
+
+  it('❌ 토큰 없이 요청 → 401 Unauthorized', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/user/me/posts')
+      .expect(401);
+
+    expect(res.body.message).toContain("Access Token이 존재하지 않습니다.");
+  });
+
+  it('❌ 삭제된 유저 → 401 Unauthorized', async () => {
+    await userRepository.update({ id: user.id }, { isDeleted: true });
+
+    const res = await request(app.getHttpServer())
+      .get('/user/me/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(401);
+
+    expect(res.body.message).toContain('존재하지 않는 사용자입니다.');
+
+    await userRepository.update({ id: user.id }, { isDeleted: false });
+  });
+
+  it('❕ 존재하지 않는 cursor → 최신 게시물 반환', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/user/me/posts?cursor=999999`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(res.body.posts).toHaveLength(10);
+    expect(res.body.posts[0].id).toBeGreaterThan(res.body.posts[res.body.posts.length - 1].id);
+  });  
+
+  it('❕ 게시물이 없는 사용자 → 빈 배열 반환', async () => {
+    const email = `no-post-${Date.now()}@test.com`;
+
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({
+        email,
+        password: '12345678',
+        name: '노포스트',
+        nickname: '비어있음',
+      })
+      .expect(201);
+
+    const token = (
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: '12345678' })
+        .expect(200)
+    ).body.accessToken;
+
+    const res = await request(app.getHttpServer())
+      .get('/user/me/posts')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(res.body.posts).toHaveLength(0);
+
+    const user = await userRepository.findOneByOrFail({ email });
+    await userRepository.delete({ id: user.id });
   });
 });

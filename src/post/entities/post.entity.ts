@@ -14,10 +14,10 @@ import { Comment } from '../../comment/entities/comment.entity';
 import { Like } from '../../like/entities/like.entity';
 
 @Index('idx_created_id_title_author', ['createdAt', 'id', 'title', 'author'])
-@Index('idx_author_id_title', ['author', 'id', 'isDeleted', 'title'])
+@Index('idx_author_id_title', ['author', 'isDeleted', 'id', 'title'])
 @Entity()
 export class Post {
-  @PrimaryGeneratedColumn('increment')
+  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
   id: number;
 
   @Column()

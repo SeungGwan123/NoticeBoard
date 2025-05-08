@@ -2,15 +2,16 @@ import { Injectable, InternalServerErrorException, UnauthorizedException } from 
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Post } from 'post/entities/post.entity';
+import { Post } from '../post/entities/post.entity';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+
     @InjectRepository(Post)
     private readonly postRepository: Repository<Post>,
-    private readonly userRepository: Repository<User>,
   ) {}
 
   async getMe(userId: string): Promise<{ email: string; name: string; nickname: string }> {
@@ -82,20 +83,48 @@ export class UserService {
       throw new UnauthorizedException('존재하지 않는 사용자입니다.');
     }
 
-    const queryBuilder = this.postRepository
+    let effectiveLastPostId: number | null = null;
+
+    if (lastPostId) {
+      const isValid = await this.postRepository
+        .createQueryBuilder('post')
+        .where('post.authorId = :userId', { userId })
+        .andWhere('post.isDeleted = false')
+        .andWhere('post.id = :lastPostId', { lastPostId })
+        .getCount();
+      if (isValid > 0) {
+        effectiveLastPostId = lastPostId;
+      }
+    }
+
+    if (!effectiveLastPostId) {
+      const maxPost = await this.postRepository
+        .createQueryBuilder('post')
+        .select('MAX(post.id)', 'max')
+        .where('post.authorId = :userId', { userId })
+        .andWhere('post.isDeleted = false')
+        .getRawOne();
+
+      if (!maxPost?.max) {
+        return { posts: [] };
+      }
+
+      effectiveLastPostId = maxPost.max;
+    }
+
+    const posts = await this.postRepository
       .createQueryBuilder('post')
       .select(['post.id', 'post.title'])
       .where('post.authorId = :userId', { userId })
-      .andWhere('post.id > :lastPostId', { lastPostId: lastPostId ?? 0 })
       .andWhere('post.isDeleted = false')
-      .orderBy('post.id', 'ASC')
-      .limit(10);
-
-    const posts = await queryBuilder.getMany();
+      .andWhere('post.id < :lastPostId', { lastPostId: effectiveLastPostId })
+      .orderBy('post.id', 'DESC')
+      .limit(10)
+      .getMany();
 
     return {
       posts: posts.map((post) => ({
-        id: post.id,
+        id: Number(post.id),
         title: post.title,
       })),
     };

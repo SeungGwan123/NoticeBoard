@@ -38,7 +38,7 @@ describe('UserService getMe', () => {
           synchronize: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User]),
+        TypeOrmModule.forFeature([User, Post]),
       ],
       providers: [UserService],
     }).compile();
@@ -110,7 +110,7 @@ describe('UserService updateMe', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User]),
+        TypeOrmModule.forFeature([User, Post]),
       ],
       providers: [UserService],
     }).compile();
@@ -215,7 +215,7 @@ describe('UserService getUser', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User]),
+        TypeOrmModule.forFeature([User, Post]),
       ],
       providers: [UserService],
     }).compile();
@@ -285,7 +285,7 @@ describe('UserService deleteMe', () => {
           autoLoadEntities: true,
           entities: [User, Post, Comment, Like, File],
         }),
-        TypeOrmModule.forFeature([User]),
+        TypeOrmModule.forFeature([User, Post]),
       ],
       providers: [UserService],
     }).compile();
@@ -336,5 +336,113 @@ describe('UserService deleteMe', () => {
 
     spy.mockRestore();
     await userRepository.delete({ id: testUser2.id });
+  });
+});
+
+describe('UserService getMyPosts', () => {
+  let userService: UserService;
+  let userRepository: Repository<User>;
+  let postRepository: Repository<Post>;
+  let dataSource: DataSource;
+  let user: User;
+
+  beforeAll(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, Comment, Like, File],
+        }),
+        TypeOrmModule.forFeature([User, Post]),
+      ],
+      providers: [UserService],
+    }).compile();
+
+    userService = module.get(UserService);
+    dataSource = module.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+    postRepository = dataSource.getRepository(Post);
+
+    // 테스트 유저 생성
+    user = await userRepository.save({
+      email: `myposts-${Date.now()}@test.com`,
+      password: '12345678',
+      name: '유저',
+      nickname: '게시유저',
+    });
+
+    // 게시물 15개 생성
+    const posts = Array.from({ length: 15 }, (_, i) =>
+      postRepository.create({
+        title: `테스트 ${i + 1}`,
+        content: `내용 ${i + 1}`,
+        author: user,
+        isDeleted: false,
+      }),
+    );
+    await postRepository.save(posts);
+  });
+
+  afterAll(async () => {
+    await postRepository.delete({ author: { id: user.id } });
+    await userRepository.delete({ id: user.id });
+    await dataSource.destroy();
+  });
+
+  it('✅ 최신 10개 반환', async () => {
+    const res = await userService.getMyPosts(user.id);
+    expect(res.posts).toHaveLength(10);
+    expect(res.posts[0].title).toBe('테스트 14');
+    expect(res.posts[9].title).toBe('테스트 5');
+  });
+
+  it('✅ 유효한 cursor → 이전 게시물 5개 반환', async () => {
+    const cursor = (await postRepository.findOneByOrFail({ title: '테스트 6' })).id;
+    const res = await userService.getMyPosts(user.id, cursor);
+    expect(res.posts).toHaveLength(5);
+    expect(res.posts[0].title).toBe('테스트 5');
+    expect(res.posts[4].title).toBe('테스트 1');
+  });
+
+  it('✅ 존재하지 않는 cursor → 최신 10개 반환', async () => {
+    const res = await userService.getMyPosts(user.id, 9999999);
+    expect(res.posts).toHaveLength(10);
+    expect(res.posts[0].title).toBe('테스트 14');
+  });
+
+  it('✅ 게시물이 없는 유저 → 빈 배열 반환', async () => {
+    const noPostUser = await userRepository.save({
+      email: `nopost-${Date.now()}@test.com`,
+      password: '12345678',
+      name: '무',
+      nickname: '게시물없음',
+    });
+
+    const res = await userService.getMyPosts(noPostUser.id);
+    expect(res.posts).toHaveLength(0);
+
+    await userRepository.delete({ id: noPostUser.id });
+  });
+
+  it('❌ 삭제된 유저 → UnauthorizedException', async () => {
+    await userRepository.update({ id: user.id }, { isDeleted: true });
+
+    await expect(userService.getMyPosts(user.id)).rejects.toThrow('존재하지 않는 사용자입니다.');
+
+    await userRepository.update({ id: user.id }, { isDeleted: false }); // 원복
+  });
+
+  it('❌ 존재하지 않는 유저 → UnauthorizedException', async () => {
+    await expect(
+      userService.getMyPosts('11111111-1111-1111-1111-111111111111'),
+    ).rejects.toThrow('존재하지 않는 사용자입니다.');
   });
 });

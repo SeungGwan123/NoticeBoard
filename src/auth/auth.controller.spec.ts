@@ -274,7 +274,7 @@ describe('AuthController POST logout', () => {
           entities: [User, Post, Comment, Like, File],
         }),
         AuthModule,
-        JwtModule.register({}), // for jwt decoding
+        JwtModule.register({}),
       ],
     }).compile();
 
@@ -385,7 +385,6 @@ describe('AuthController POST refresh-token', () => {
 
     dataSource = moduleFixture.get(DataSource);
 
-    // 사용자 생성 및 로그인
     const timestamp = Date.now();
     const validUser = {
       email: `test-${timestamp}@example.com`,

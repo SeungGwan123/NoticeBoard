@@ -51,8 +51,8 @@ export class UserController {
   @Get('me/posts')
   getMyPosts(
     @Req() req: Request,
-    @Query('cursor') lastPostId?: string,
-  ): Promise<{ posts: { id: string; title: string }[] }> {
+    @Query('cursor') lastPostId?: number,
+  ): Promise<{ posts: { id: number; title: string }[] }> {
     const userId = req['user'].id;
     return this.userService.getMyPosts(userId, lastPostId);
   }
