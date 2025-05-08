@@ -12,6 +12,7 @@ import { CommentModule } from './comment.module';
 import { AuthModule } from '../auth/auth.module';
 import { File } from '../file/entities/file.entity';
 import { Like } from '../like/entities/like.entity';
+import { PostStats } from '../post/entities/post-stats.entity';
 
 describe('CommentController POST /comment', () => {
   let app: INestApplication;
@@ -19,6 +20,7 @@ describe('CommentController POST /comment', () => {
   let userRepository: Repository<User>;
   let postRepository: Repository<Post>;
   let commentRepository: Repository<Comment>;
+  let postStatsRepository: Repository<PostStats>;
   let accessToken: string;
   let post: Post;
   let user: User;
@@ -36,9 +38,9 @@ describe('CommentController POST /comment', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, File, Like],
+          entities: [User, Post, Comment, File, Like, PostStats],
         }),
-        TypeOrmModule.forFeature([User, Post, Comment]),
+        TypeOrmModule.forFeature([User, Post, Comment, PostStats]),
         AuthModule,
         CommentModule,
       ],
@@ -52,6 +54,7 @@ describe('CommentController POST /comment', () => {
     userRepository = dataSource.getRepository(User);
     postRepository = dataSource.getRepository(Post);
     commentRepository = dataSource.getRepository(Comment);
+    postStatsRepository = dataSource.getRepository(PostStats);
 
     const timestamp = Date.now();
     const testEmail = `comment-${timestamp}@test.com`;
@@ -75,6 +78,12 @@ describe('CommentController POST /comment', () => {
       content: '본문',
       author: user,
       isDeleted: false,
+    });
+    await postStatsRepository.save({
+      post,
+      commentCount: 0,
+      likeCount: 0,
+      viewCount: 0,
     });
   });
 
@@ -124,6 +133,23 @@ describe('CommentController POST /comment', () => {
       .expect(201);
 
     expect(res.body.message).toBe('댓글이 등록되었습니다.');
+  });
+
+  it('✅ 댓글 등록 시 PostStats.commentCount 증가', async () => {
+    const before = await postStatsRepository.findOneByOrFail({ post: { id: post.id } });
+    const beforeCount = before.commentCount;
+
+    await request(app.getHttpServer())
+      .post('/comment')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        postId: post.id,
+        content: '댓글 카운트 증가 테스트',
+      })
+      .expect(201);
+
+    const after = await postStatsRepository.findOneByOrFail({ post: { id: post.id } });
+    expect(after.commentCount).toBe(beforeCount + 1);
   });
 
   it('❌ 존재하지 않는 부모 댓글 → 404', async () => {
@@ -196,6 +222,7 @@ describe('CommentController DELETE /comment/:commentId', () => {
   let userRepository: Repository<User>;
   let postRepository: Repository<Post>;
   let commentRepository: Repository<Comment>;
+  let postStatsRepository: Repository<PostStats>;
   let accessToken: string;
   let user: User;
   let post: Post;
@@ -213,9 +240,9 @@ describe('CommentController DELETE /comment/:commentId', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
-        TypeOrmModule.forFeature([User, Post, Comment, Like, File]),
+        TypeOrmModule.forFeature([User, Post, Comment, Like, File, PostStats]),
         AuthModule,
         UserModule,
         CommentModule,
@@ -230,8 +257,8 @@ describe('CommentController DELETE /comment/:commentId', () => {
     userRepository = dataSource.getRepository(User);
     postRepository = dataSource.getRepository(Post);
     commentRepository = dataSource.getRepository(Comment);
+    postStatsRepository = dataSource.getRepository(PostStats);
 
-    // 유저 생성 및 로그인
     const email = `comment-del-${Date.now()}@test.com`;
     await request(app.getHttpServer()).post('/auth/signup').send({
       email,
@@ -252,6 +279,12 @@ describe('CommentController DELETE /comment/:commentId', () => {
       content: '삭제 테스트 글입니다.',
       author: user,
       isDeleted: false,
+    });
+    await postStatsRepository.save({
+      post,
+      commentCount: 0,
+      likeCount: 0,
+      viewCount: 0,
     });
   });
 
@@ -276,6 +309,26 @@ describe('CommentController DELETE /comment/:commentId', () => {
       .expect(200);
 
     expect(res.body.message).toBe('댓글이 삭제되었습니다.');
+  });
+
+  it('✅ 댓글 삭제 시 PostStats.commentCount 감소', async () => {
+    const comment = await commentRepository.save({
+      content: '댓글 카운트 감소 테스트',
+      post,
+      author: user,
+      isDeleted: false,
+    });
+
+    const before = await postStatsRepository.findOneByOrFail({ post: { id: post.id } });
+    const beforeCount = before.commentCount;
+
+    await request(app.getHttpServer())
+      .delete(`/comment/${comment.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    const after = await postStatsRepository.findOneByOrFail({ post: { id: post.id } });
+    expect(after.commentCount).toBe(beforeCount - 1);
   });
 
   it('❌ 존재하지 않는 댓글 삭제 → 404', async () => {
