@@ -17,6 +17,8 @@ import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { AccessTokenGuard } from '../common/guard/access-token.guard';
 import { GetPostResponseDto } from './dto/get-post-response.dto';
+import { ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { IsOptional } from 'class-validator';
 
 @UseGuards(AccessTokenGuard)
 @Controller('post')
@@ -24,6 +26,10 @@ export class PostController {
   constructor(private readonly postService: PostService) {}
 
   @Post()
+  @ApiOperation({ summary: '게시글 생성' })
+  @ApiResponse({ status: 201, description: '게시글 등록 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiBearerAuth()
   createPost(
     @Req() req: Request,
     @Body() createPostDto: CreatePostDto,
@@ -33,6 +39,10 @@ export class PostController {
   }
 
   @Get(':postId')
+  @ApiOperation({ summary: '게시글 조회' })
+  @ApiResponse({ status: 200, description: '게시글 조회 성공', type: GetPostResponseDto })
+  @ApiResponse({ status: 404, description: '게시글이 존재하지 않음' })
+  @ApiBearerAuth()
   getPost(
     @Param('postId', ParseIntPipe) postId: number,
   ): Promise<GetPostResponseDto> {
@@ -40,6 +50,11 @@ export class PostController {
   }
 
   @Patch(':postId')
+  @ApiOperation({ summary: '게시글 수정' })
+  @ApiResponse({ status: 200, description: '게시글 수정 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiResponse({ status: 404, description: '게시글이 존재하지 않음' })
+  @ApiBearerAuth()
   updatePost(
     @Req() req: Request,
     @Param('postId', ParseIntPipe) postId: number,
@@ -50,6 +65,11 @@ export class PostController {
   }
 
   @Delete(':postId')
+  @ApiOperation({ summary: '게시글 삭제' })
+  @ApiResponse({ status: 200, description: '게시글 삭제 성공' })
+  @ApiResponse({ status: 404, description: '게시글이 존재하지 않음' })
+  @ApiResponse({ status: 403, description: '삭제 권한이 없음' })
+  @ApiBearerAuth()
   async deletePost(
     @Req() req: Request,
     @Param('postId', ParseIntPipe) postId: number,
@@ -60,17 +80,37 @@ export class PostController {
   }
 
   @Get('list/posts')
+  @ApiOperation({ summary: '게시글 목록 조회' })
+  @ApiResponse({
+    status: 200,
+    description: '게시글 목록 조회 성공',
+    type: [GetPostResponseDto],
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiQuery({
+    name: 'cursor',
+    description: '게시글 조회의 커서',
+    required: false,
+  })
+  @ApiBearerAuth()
   getPosts(
     @Req() req: Request,
     @Query('cursor') cursor?: number,
     @Query('sortBy') sortBy: 'id' | 'like' = 'id',
   ): Promise<{ posts: { id: number; title: string; author: { id: string; name: string } }[] }> {
     const userId = req['user'].id;
-
     return this.postService.getPosts(userId, sortBy, cursor);
   }
 
   @Get('search')
+  @ApiOperation({ summary: '게시글 검색' })
+  @ApiResponse({
+    status: 200,
+    description: '게시글 검색 성공',
+    type: [GetPostResponseDto],
+  })
+  @ApiResponse({ status: 400, description: '잘못된 검색 타입' })
+  @ApiBearerAuth()
   searchPosts(
     @Query('query') query: string,
     @Query('type') type: 'title_data' | 'nickname',
