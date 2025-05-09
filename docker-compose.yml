@@ -1,4 +1,4 @@
-version: "3.9"
+version: "3.8"
 
 services:
   db:
@@ -13,18 +13,20 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  # backend:
-  #   build: .
-  #   command: sh -c "npm run build && npm run start:prod"
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - db
-  #   env_file:
-  #     - .env
-  #   volumes:
-  #     - .:/app
-  #     - /app/node_modules
+  backend:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    env_file:
+      - .env.${NODE_ENV}
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=${NODE_ENV}
 
 volumes:
   pgdata:

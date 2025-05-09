@@ -15,6 +15,7 @@ import { CommonModule } from './common/common.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
+      envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
       isGlobal: true,
     }),
     TypeOrmModule.forRoot({
@@ -25,9 +26,7 @@ import { CommonModule } from './common/common.module';
       password: String(process.env.DB_PASSWORD),
       database: process.env.DB_DATABASE,
       synchronize: process.env.DB_SYNC === 'true',
-      dropSchema: process.env.DB_DROPSCHEMA === 'true',
-      logging: false,
-      autoLoadEntities: true,
+      logging: process.env.NODE_ENV === 'development',
     }),
     UserModule,
     PostModule,

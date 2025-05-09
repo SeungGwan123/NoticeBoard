@@ -1,7 +1,6 @@
-# Dockerfile
-FROM node:18-alpine
+# 첫 번째 스테이지: 빌드 환경
+FROM node:18
 
-# 앱 디렉토리 생성
 WORKDIR /app
 
 # 의존성 설치
