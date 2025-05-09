@@ -10,7 +10,7 @@ import { Comment } from '../comment/entities/comment.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Post, PostStats, User, File, Comment]),
+    TypeOrmModule.forFeature([Post, PostStats, User, Comment]),
     CommonModule,
   ],
   controllers: [PostController],

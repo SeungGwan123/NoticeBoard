@@ -15,7 +15,6 @@ import {
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
-import { UpdatePostDto } from './dto/update-post.dto';
 import { AccessTokenGuard } from '../common/guard/access-token.guard';
 import { GetPostResponseDto } from './dto/get-post-response.dto';
 
