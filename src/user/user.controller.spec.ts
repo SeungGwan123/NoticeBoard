@@ -14,6 +14,7 @@ import { UserModule } from './user.module';
 import * as jwt from 'jsonwebtoken';
 import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
+import { PostStats } from '../post/entities/post-stats.entity';
 
 describe('UserController GET me', () => {
   let app: INestApplication;
@@ -42,7 +43,7 @@ describe('UserController GET me', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
         UserModule,
@@ -142,7 +143,7 @@ describe('UserController PATCH me', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
         UserModule,
@@ -266,7 +267,7 @@ describe('UserController GET :userId', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
         UserModule,
@@ -382,7 +383,7 @@ describe('UserController DELETE me', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment, Like, File]),
         AuthModule,
@@ -471,7 +472,7 @@ describe('UserController GET me/posts', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment, Like, File]),
         AuthModule,
@@ -629,7 +630,7 @@ describe('UserController GET /user/me/comments', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment, Like, File]),
         AuthModule,

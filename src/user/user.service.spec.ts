@@ -11,6 +11,7 @@ import { Like } from '../like/entities/like.entity';
 import { File } from '../file/entities/file.entity';
 import { InternalServerErrorException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
+import { PostStats } from '../post/entities/post-stats.entity';
 
 describe('UserService getMe', () => {
   let userService: UserService;
@@ -36,7 +37,7 @@ describe('UserService getMe', () => {
           password: String(process.env.DB_PASSWORD),
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment]),
       ],
@@ -108,7 +109,7 @@ describe('UserService updateMe', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment]),
       ],
@@ -212,7 +213,7 @@ describe('UserService getUser', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment]),
       ],
@@ -282,7 +283,7 @@ describe('UserService deleteMe', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment]),
       ],
@@ -358,7 +359,7 @@ describe('UserService getMyPosts', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment]),
       ],
@@ -466,7 +467,7 @@ describe('UserService getMyComments', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User, Post, Comment]),
       ],

@@ -4,6 +4,7 @@ import {
   Column,
   ManyToOne,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { Post } from '../../post/entities/post.entity';
 
@@ -23,6 +24,7 @@ export class File {
   @Column({ nullable: true })
   size: number;
 
+  @Index('idx_file_post_id', ['post'])
   @ManyToOne(() => Post, (post) => post.files, { onDelete: 'CASCADE' })
   post: Post;
 

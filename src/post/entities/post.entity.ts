@@ -7,11 +7,14 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  OneToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { File } from '../../file/entities/file.entity';
 import { Comment } from '../../comment/entities/comment.entity';
 import { Like } from '../../like/entities/like.entity';
+import { PostStats } from './post-stats.entity';
 
 @Index('idx_created_id_title_author', ['createdAt', 'id', 'title', 'author'])
 @Index('idx_author_id_title', ['author', 'isDeleted', 'id', 'title'])
@@ -46,4 +49,8 @@ export class Post {
 
   @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
+
+  @OneToOne(() => PostStats, (postStats) => postStats.post, { nullable: true })
+  @JoinColumn()
+  postStats: PostStats;
 }

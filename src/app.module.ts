@@ -11,6 +11,12 @@ import { CommentModule } from './comment/comment.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AuthModule } from './auth/auth.module';
 import { CommonModule } from './common/common.module';
+import { PostStats } from './post/entities/post-stats.entity';
+import { User } from './user/entities/user.entity';
+import { Post } from './post/entities/post.entity';
+import { File } from './file/entities/file.entity';
+import { Comment } from './comment/entities/comment.entity';
+import { Like } from './like/entities/like.entity';
 
 @Module({
   imports: [
