@@ -9,6 +9,8 @@ import {
   UseGuards,
   Req,
   ParseIntPipe,
+  Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -55,5 +57,16 @@ export class PostController {
     const userId = req['user'].id;
     await this.postService.deletePost(userId, postId);
     return { message: '게시글이 삭제되었습니다.' };
+  }
+
+  @Get('list/posts')
+  getPosts(
+    @Req() req: Request,
+    @Query('cursor') cursor?: number,
+    @Query('sortBy') sortBy: 'id' | 'like' = 'id',
+  ): Promise<{ posts: { id: number; title: string; author: { id: string; name: string } }[] }> {
+    const userId = req['user'].id;
+
+    return this.postService.getPosts(userId, sortBy, cursor);
   }
 }

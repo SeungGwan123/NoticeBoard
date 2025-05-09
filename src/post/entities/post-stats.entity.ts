@@ -1,13 +1,13 @@
 import { Column, Entity, In, Index, JoinColumn, OneToOne, PrimaryGeneratedColumn } from "typeorm";
 import { Post } from "./post.entity";
 
+@Index('idx_post_stats_post_id', ['post'])
 @Index('idx_like_count_post_id', ['likeCount', 'post'])
-@Entity()
+@Entity('postStats')
 export class PostStats {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Index('idx_post_stats_post_id', ['post'])
   @OneToOne(() => Post, { onDelete: 'CASCADE' })
   @JoinColumn()
   post: Post;

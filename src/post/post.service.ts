@@ -235,4 +235,79 @@ export class PostService {
     post.isDeleted = true;
     await this.postRepository.save(post);
   }
+
+  async getPosts(
+    userId: string,
+    sortBy: string,
+    cursor?: number,
+  ): Promise<{ posts: { id: number; title: string; author: { id: string; name: string } }[] }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('존재하지 않는 사용자입니다.');
+    }
+
+    let effectiveCursor: number | null = null;
+
+    if (cursor) {
+      const isValid = await this.postRepository
+        .createQueryBuilder('post')
+        .where('post.authorId = :userId', { userId })
+        .andWhere('post.isDeleted = false')
+        .andWhere('post.id = :cursor', { cursor })
+        .getCount();
+
+      if (isValid > 0) {
+        effectiveCursor = cursor;
+      }
+    }
+    const postsQuery = this.postRepository
+      .createQueryBuilder('post')
+      .select(['post.id', 'post.title'])
+      .addSelect(['author.id', 'author.name'])
+      .innerJoin('post.author', 'author')
+      .where('post.authorId = :userId', { userId })
+      .andWhere('post.isDeleted = false');
+
+    if (!effectiveCursor) {
+      const maxPost = await this.postRepository
+        .createQueryBuilder('post')
+        .select('MAX(post.id)', 'max')
+        .where('post.authorId = :userId', { userId })
+        .andWhere('post.isDeleted = false')
+        .getRawOne();
+
+      if (!maxPost?.max) {
+        return { posts: [] };
+      }
+
+      effectiveCursor = maxPost.max;
+      postsQuery.andWhere('post.id <= :cursor', { cursor: effectiveCursor });
+    }
+    else {
+      postsQuery.andWhere('post.id < :cursor', { cursor: effectiveCursor });
+    }
+
+    if (sortBy === 'like') {
+      postsQuery
+        .leftJoin('post.postStats', 'postStats')
+        .addSelect('postStats.likeCount', 'likeCount')
+        .orderBy('postStats.likeCount', 'DESC');
+    } else {
+      postsQuery.orderBy('post.id', 'DESC');
+    }
+
+    const posts = await postsQuery.limit(10).getMany();
+
+    return {
+      posts: posts.map((post) => ({
+        id: Number(post.id),
+        title: post.title,
+        author: {
+          id: post.author.id,
+          name: post.author.name,
+        },
+      })),
+    };
+  }
 }

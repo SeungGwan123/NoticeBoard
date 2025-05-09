@@ -12,6 +12,7 @@ import { Comment } from '../comment/entities/comment.entity';
 import { Like } from '../like/entities/like.entity';
 import { File } from '../file/entities/file.entity';
 import { JwtModule } from '@nestjs/jwt';
+import { PostStats } from '../post/entities/post-stats.entity';
 
 describe('AuthController POST signup', () => {
   let app: INestApplication;
@@ -38,7 +39,7 @@ describe('AuthController POST signup', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
       ],
@@ -152,7 +153,7 @@ describe('AuthController POST login', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
         JwtModule.register({}),
@@ -276,7 +277,7 @@ describe('AuthController POST logout', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
         JwtModule.register({}),
@@ -377,7 +378,7 @@ describe('AuthController POST refresh-token', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
       ],

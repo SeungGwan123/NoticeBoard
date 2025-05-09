@@ -17,6 +17,7 @@ import { FileModule } from '../file/file.module';
 import { PostStats } from './entities/post-stats.entity';
 import { CommentModule } from '../comment/comment.module';
 import { v4 as uuid } from 'uuid';
+import { LikeModule } from '../like/like.module';
 
 describe('PostController POST post', () => {
   let app: INestApplication;
@@ -750,8 +751,8 @@ describe('PostController PATCH /post/:postId', () => {
   });
 
   it('❌ 다른 유저의 게시글 → 404', async () => {
-    const other = await userRepo.save({ email: 'other@test.com', password: '1234', name: 'o', nickname: 'oo' });
-    const post = await postRepo.save({ title: 't', content: 'c', author: other });
+    const otherUser = await userRepo.save({ email: `other-${Date.now()}@test.com`, password: '1234', name: 'o', nickname: 'oo' });
+    const post = await postRepo.save({ title: 't', content: 'c', author: otherUser });
 
     await request(app.getHttpServer())
       .patch(`/post/${post.id}`)
@@ -890,5 +891,150 @@ describe('PostController PATCH /post/:postId', () => {
       .expect(400);
 
     expect(res.body.message).toContain('스크립트 태그는 사용할 수 없습니다.');
+  });
+});
+
+describe('PostController GET /posts', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let userRepository: Repository<User>;
+  let postRepository: Repository<Post>;
+  let postStatsRepository: Repository<PostStats>;
+  let accessToken: string;
+  let user: User;
+
+  const testUser = {
+    email: `e2e-${Date.now()}@example.com`,
+    password: 'password1234',
+    name: '유저',
+    nickname: '작성자',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+          entities: [User, Post, File, PostStats],
+        }),
+        TypeOrmModule.forFeature([User, Post, File, PostStats, Like, Comment]),
+        AuthModule,
+        PostModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    userRepository = dataSource.getRepository(User);
+    postRepository = dataSource.getRepository(Post);
+    postStatsRepository = dataSource.getRepository(PostStats);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = res.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+  });
+
+  afterEach(async () => {
+    await postRepository.delete({});
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ email: testUser.email });
+    await app.close();
+  });
+
+  it('✅ 정상적으로 최신순 게시글 조회 (id DESC)', async () => {
+    const post1 = await postRepository.save({
+      title: '첫 번째 게시글',
+      content: '내용1',
+      author: user,
+    });
+    const post2 = await postRepository.save({
+      title: '두 번째 게시글',
+      content: '내용2',
+      author: user,
+    });
+    const post3 = await postRepository.save({
+      title: '세 번째 게시글',
+      content: '내용3',
+      author: user,
+    });
+    await postStatsRepository.save({ post: post1 });
+    await postStatsRepository.save({ post: post2 });
+    await postStatsRepository.save({ post: post3 });
+
+    const res = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ sortBy: 'id' })
+      .expect(200);
+    
+    expect(res.body.posts.length).toBeGreaterThan(0);
+    expect(res.body.posts[0].id).toBeGreaterThan(res.body.posts[1].id);
+  });
+
+  it('❌ 커서가 유효하지 않을때', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ cursor: 999999999 })
+      .expect(200);
+
+    expect(res.body.posts).toEqual([]);
+  });
+
+  it('✅ 커서 기반 페이지네이션', async () => {
+    const post1 = await postRepository.save({
+      title: '첫 번째 게시글',
+      content: '내용1',
+      author: user,
+    });
+    const post2 = await postRepository.save({
+      title: '두 번째 게시글',
+      content: '내용2',
+      author: user,
+    });
+
+    await postStatsRepository.save({ post: post1, likeCount: 2 });
+    await postStatsRepository.save({ post: post2, likeCount: 3 });
+
+    const res1 = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ cursor: post2.id })
+      .expect(200);
+
+    expect(res1.body.posts.length).toBe(1);
+
+    const res2 = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ cursor: post1.id })
+      .expect(200);
+
+    expect(res2.body.posts.length).toBe(0);
+  });
+
+  it('❌ 로그인하지 않은 경우 401 반환', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .expect(401);
+
+    expect(res.body.message).toContain("Access Token이 존재하지 않습니다.");
   });
 });

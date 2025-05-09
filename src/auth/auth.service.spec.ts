@@ -15,6 +15,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { AuthModule } from './auth.module';
 import * as request from 'supertest';
 import * as jwt from 'jsonwebtoken';
+import { PostStats } from '../post/entities/post-stats.entity';
 
 describe('AuthService signup', () => {
   let service: AuthService;
@@ -42,7 +43,7 @@ describe('AuthService signup', () => {
           password: String(process.env.DB_PASSWORD),
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         TypeOrmModule.forFeature([User]),
         JwtModule.register({}),
@@ -114,7 +115,7 @@ describe('AuthService login', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
       ],
@@ -208,7 +209,7 @@ describe('AuthService logout', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
       ],
@@ -277,7 +278,7 @@ describe('AuthService reissueToken', () => {
           database: process.env.DB_TEST_DATABASE,
           synchronize: true,
           autoLoadEntities: true,
-          entities: [User, Post, Comment, Like, File],
+          entities: [User, Post, Comment, Like, File, PostStats],
         }),
         AuthModule,
       ],

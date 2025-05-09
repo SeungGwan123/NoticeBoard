@@ -500,3 +500,125 @@ describe('PostService deletePost', () => {
     ).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('PostService getPosts', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let postRepository: Repository<Post>;
+  let postStatsRepository: Repository<PostStats>;
+  let userRepository: Repository<User>;
+  let accessToken: string;
+  let user: User;
+
+  const testUser = {
+    email: `e2e-${Date.now()}@example.com`,
+    password: 'password1234',
+    name: '유저',
+    nickname: '작성자',
+  };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_TEST_PORT),
+          username: process.env.DB_USERNAME,
+          password: String(process.env.DB_PASSWORD),
+          database: process.env.DB_TEST_DATABASE,
+          synchronize: true,
+          autoLoadEntities: true,
+        }),
+        TypeOrmModule.forFeature([Post, PostStats, User]),
+        AuthModule,
+        PostModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+
+    dataSource = moduleFixture.get(DataSource);
+    postRepository = dataSource.getRepository(Post);
+    postStatsRepository = dataSource.getRepository(PostStats);
+    userRepository = dataSource.getRepository(User);
+
+    await request(app.getHttpServer()).post('/auth/signup').send(testUser);
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: testUser.email, password: testUser.password });
+
+    accessToken = res.body.accessToken;
+    user = await userRepository.findOneByOrFail({ email: testUser.email });
+  });
+
+  afterEach(async () => {
+    await postRepository.delete({});
+  });
+
+  afterAll(async () => {
+    await userRepository.delete({ email: testUser.email });
+    await app.close();
+  });
+
+  it('✅ 유효한 커서로 게시글 조회', async () => {
+    const post1 = await postRepository.save({ title: '첫 번째 게시글', content: '내용1', author: user });
+    const post2 = await postRepository.save({ title: '두 번째 게시글', content: '내용2', author: user });
+
+    await postStatsRepository.save({ post: post1, likeCount: 5 });
+    await postStatsRepository.save({ post: post2, likeCount: 10 });
+
+    const res = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ cursor: post2.id, sortBy: 'like' })
+      .expect(200);
+
+    expect(Number(res.body.posts[0].id)).toBe(Number(post1.id));
+  });
+
+  it('✅ 유효하지 않은 커서로 빈 배열 반환', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ cursor: 999999999 })
+      .expect(200);
+
+    expect(res.body.posts).toEqual([]);
+  });
+
+  it('✅ 인기순 게시글 조회 (likeCount DESC)', async () => {
+    const post1 = await postRepository.save({ title: '첫 번째 게시글', content: '내용1', author: user });
+    const post2 = await postRepository.save({ title: '두 번째 게시글', content: '내용2', author: user });
+
+    await postStatsRepository.save({ post: post1, likeCount: 5 });
+    await postStatsRepository.save({ post: post2, likeCount: 10 });
+
+    const res = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ sortBy: 'like' })
+      .expect(200);
+
+    expect(res.body.posts.length).toBeGreaterThan(0);
+    expect(Number(res.body.posts[0].id)).toBe(Number(post2.id));
+    expect(Number(res.body.posts[1].id)).toBe(Number(post1.id));
+  });
+
+  it('✅ 최신순 게시글 조회 (id DESC)', async () => {
+    const post1 = await postRepository.save({ title: '첫 번째 게시글', content: '내용1', author: user });
+    const post2 = await postRepository.save({ title: '두 번째 게시글', content: '내용2', author: user });
+
+    const res = await request(app.getHttpServer())
+      .get('/post/list/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .query({ sortBy: 'id' })
+      .expect(200);
+
+    expect(res.body.posts.length).toBeGreaterThan(0);
+    expect(Number(res.body.posts[0].id)).toBe(Number(post2.id));
+    expect(Number(res.body.posts[1].id)).toBe(Number(post1.id));
+  });
+});
