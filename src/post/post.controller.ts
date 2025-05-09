@@ -11,6 +11,7 @@ import {
   ParseIntPipe,
   Query,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -68,5 +69,23 @@ export class PostController {
     const userId = req['user'].id;
 
     return this.postService.getPosts(userId, sortBy, cursor);
+  }
+
+  @Get('search')
+  searchPosts(
+    @Query('query') query: string,
+    @Query('type') type: 'title_data' | 'nickname',
+  ) {
+    if (!query) {
+      throw new BadRequestException('검색어가 필요합니다.');
+    }
+
+    if (type === 'title_data') {
+      return this.postService.searchByTitleOrContent(query);
+    } else if (type === 'nickname') {
+      return this.postService.searchByNickname(query);
+    } else {
+      throw new BadRequestException('잘못된 검색 타입입니다.');
+    }
   }
 }

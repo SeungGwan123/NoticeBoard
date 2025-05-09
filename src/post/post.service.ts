@@ -310,4 +310,31 @@ export class PostService {
       })),
     };
   }
+
+  async searchByTitleOrContent(query: string) {
+    return await this.postRepository
+      .createQueryBuilder('post')
+      .where('post.title LIKE :query OR post.content LIKE :query', {
+        query: `%${query}%`,
+      })
+      .getMany();
+  }
+
+  async searchByNickname(query: string) {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.nickname LIKE :query', { query: `%${query}%` })
+      .getMany();
+
+    if (!user || user.length === 0) {
+      return [];
+    }
+
+    return await this.postRepository
+      .createQueryBuilder('post')
+      .where('post.authorId IN (:...userIds)', {
+        userIds: user.map((u) => u.id),
+      })
+      .getMany();
+  }
 }
